@@ -11,6 +11,13 @@ user-data-dir/
 **/.chrome-profile*/
 **/user-data-dir/
 
+# 兜底通配：任何以 .chrome-profile / .chromium-profile 开头的文件或目录（含 check、codex-test 等任意后缀）
+.chrome-profile*
+.chromium-profile*
+**/.chrome-profile*
+**/.chromium-profile*
+**/*chrome-profile*
+
 # ==========================================================
 # 依赖 / 构建产物
 # ==========================================================
