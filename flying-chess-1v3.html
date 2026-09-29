@@ -1,0 +1,1680 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>鬼抓人 · 飞行棋 1v3</title>
+<style>
+:root{
+  --ink:#1d2733; --panel:#ffffff;
+  --bg1:#e8e4f0; --bg2:#f6f1e7;
+  --yellow:#f0b400; --blue:#1f7fd1; --red:#e04a3a; --green:#3d9e3a;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+  gap:22px; padding:18px; flex-wrap:wrap;
+  background:linear-gradient(135deg,var(--bg1),var(--bg2));
+  color:var(--ink); font-family:"Segoe UI","Microsoft YaHei",Arial,sans-serif;
+}
+.board{
+  position:relative; width:min(92vw,700px); aspect-ratio:1; border-radius:26px;
+  box-shadow:0 24px 60px rgba(30,42,60,.25), 0 4px 14px rgba(30,42,60,.12);
+  container-type:inline-size; user-select:none; touch-action:manipulation;
+  background:#f8f4ea;
+}
+.board svg{position:absolute; inset:0; width:100%; height:100%; display:block}
+#rings,#pieces,#moveLayer{position:absolute; inset:0}
+#rings{pointer-events:none}
+#pieces{pointer-events:none}
+.piece{pointer-events:auto}
+#moveLayer{z-index:40;pointer-events:none}
+.move-target,.move-target *{pointer-events:all}
+.move-target{cursor:pointer}
+.move-target .halo{animation:targetPulse 1s ease-in-out infinite}
+@keyframes targetPulse{0%,100%{opacity:.96;stroke-width:5}50%{opacity:.48;stroke-width:8}}
+.piece{
+  appearance:none; -webkit-appearance:none; position:absolute; height:auto;
+  width:5.4cqw; aspect-ratio:1; border-radius:50%; border:none; padding:0; font:inherit;
+  transform:translate(-50%,-50%) scale(var(--s,1));
+  transition:left .18s ease, top .18s ease, transform .25s ease, filter .2s ease, opacity .5s ease;
+  box-shadow:0 .5cqw 1.2cqw rgba(0,0,0,.35);
+  display:grid; place-items:center; z-index:10;
+}
+.piece span{
+  font-size:2.8cqw; line-height:1; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.35);
+  pointer-events:none; font-family:"Segoe UI Emoji","Segoe UI Symbol","Noto Sans Symbols",sans-serif;
+}
+.piece.yellow{background:radial-gradient(circle at 35% 30%, #ffe08a, var(--yellow) 72%)}
+.piece.blue{background:radial-gradient(circle at 35% 30%, #9ecdf5, var(--blue) 72%)}
+.piece.red{background:radial-gradient(circle at 35% 30%, #f7a99e, var(--red) 72%)}
+.piece.green{background:radial-gradient(circle at 35% 30%, #a5d99e, var(--green) 72%)}
+.piece.ghost{background:radial-gradient(circle at 35% 30%, #9a9ab8, #26263a 74%); width:6.2cqw; z-index:25}
+.piece.moving{z-index:60}
+.piece.carried{z-index:26}
+#dolls{position:absolute;inset:0;pointer-events:none;z-index:24}
+.doll{position:absolute;width:5.2cqw;aspect-ratio:1;border-radius:50%;transform:translate(-50%,-50%);display:grid;place-items:center;background:radial-gradient(circle at 35% 30%,#fff8e8,#c9a38b 72%);border:.45cqw solid #6d4b3d;box-shadow:0 .5cqw 1.2cqw rgba(0,0,0,.35)}
+.doll span{font-size:2.5cqw;line-height:1}
+.piece.chained{filter:grayscale(.65) brightness(.92)}
+.piece.shielded{box-shadow:0 0 0 .55cqw #64b5f6, 0 .5cqw 1.2cqw rgba(0,0,0,.35)}
+.piece.immune{animation:immune 1s ease-in-out infinite}
+@keyframes immune{
+  0%,100%{box-shadow:0 0 0 .4cqw #ffd54d, 0 .5cqw 1.2cqw rgba(0,0,0,.35)}
+  50%{box-shadow:0 0 0 1.1cqw rgba(255,213,77,.35), 0 .5cqw 1.2cqw rgba(0,0,0,.35)}
+}
+.piece.hidden{opacity:0; pointer-events:none}
+.ring{
+  position:absolute; width:8.6cqw; aspect-ratio:1; border-radius:20%;
+  transform:translate(-50%,-50%); pointer-events:none; z-index:5;
+  border:.5cqw dashed rgba(255,255,255,.95);
+  box-shadow:0 0 0 2px rgba(0,0,0,.3);
+  animation:ringPulse 1s ease-in-out infinite;
+}
+@keyframes ringPulse{0%,100%{opacity:.95}50%{opacity:.35}}
+.panel{
+  width:min(92vw,350px); background:var(--panel); border-radius:18px; padding:16px;
+  box-shadow:0 18px 46px rgba(30,42,60,.16); display:flex; flex-direction:column; gap:10px;
+}
+h1{margin:0; font-size:21px; letter-spacing:1px}
+.turn-line{display:flex; align-items:center; gap:10px; font-size:16px; font-weight:700; min-height:24px}
+.turn-dot{width:16px;height:16px;border-radius:50%;border:2px solid rgba(0,0,0,.25);flex:none}
+.dice-area{display:grid; grid-template-columns:84px 1fr; gap:12px; align-items:center}
+.dice{width:84px; aspect-ratio:1; background:#fff; border:2px solid #2a3542; border-radius:16px; padding:10px; box-shadow:inset 0 -4px 0 rgba(0,0,0,.08)}
+.face{width:100%;height:100%;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr)}
+.face i{display:grid;place-items:center}
+.face i b{width:68%;aspect-ratio:1;border-radius:50%;background:#232c38;opacity:0;transition:opacity .05s}
+.face i.on b{opacity:1}
+.dice.rolling{animation:shake .28s infinite}
+@keyframes shake{0%,100%{transform:rotate(0)}25%{transform:rotate(-9deg)}75%{transform:rotate(9deg)}}
+button{
+  height:40px; border:1px solid #9fb0c0; border-radius:10px; background:#fff; color:var(--ink);
+  font-size:14px; font-weight:700; cursor:pointer; transition:filter .15s, transform .05s; padding:0 6px;
+}
+button:hover{filter:brightness(.96)}
+.action-info{font-size:14px;font-weight:700;color:#44515f;background:#eef3f7;border-radius:9px;padding:8px 10px;line-height:1.3}
+button:active{transform:translateY(1px)}
+button.primary{background:var(--ink); color:#fff; border-color:var(--ink)}
+button.dark{background:#26263a; color:#fff; border-color:#26263a}
+button:disabled{opacity:.45; cursor:default; transform:none}
+.actions-box{display:grid; grid-template-columns:1fr 1fr; gap:8px; min-height:46px}
+.actions-box .full{grid-column:1/-1}
+.obj-bar{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:13px; font-weight:700;
+  background:#f4f6f9; border-radius:10px; padding:8px 10px;
+}
+.pip{width:13px;height:13px;border-radius:50%;background:#d5dbe2;display:inline-block;margin-right:3px;vertical-align:-2px}
+.pip.on{background:var(--yellow)}
+.pip.gold{background:#e8b400;box-shadow:0 0 6px rgba(232,180,0,.8)}
+.lock-badge{font-size:12px;padding:2px 8px;border-radius:99px;background:#eceff3;color:#5a6b7d}
+.lock-badge.open{background:#e3f4e0;color:#2c7a2a}
+.players{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+.pcard{border:1.5px solid #e3e8ee; border-radius:12px; padding:7px 9px; font-size:12.5px; line-height:1.5; background:#fbfcfe; transition:.2s}
+.pcard.active{border-color:var(--ink); box-shadow:0 0 0 2px rgba(29,39,51,.12); background:#fff}
+.pcard.dead{opacity:.55; filter:grayscale(.7)}
+.pcard .dot{display:inline-block; width:11px; height:11px; border-radius:50%; border:1px solid rgba(0,0,0,.25); margin-right:6px; vertical-align:-1px}
+.pcard .st{font-weight:700}
+.status{min-height:76px; background:#f4f6f9; border-radius:12px; padding:9px 11px; font-size:13px; line-height:1.65}
+.status div{color:#5f7080}
+.status div:first-child{font-weight:700; color:var(--ink)}
+.status-toast{
+  position:fixed; top:18px; left:50%; z-index:200; max-width:min(92vw,540px);
+  padding:13px 20px; border:2px solid #8fa3b8; border-radius:12px;
+  background:#17202a; color:#fff; box-shadow:0 18px 50px rgba(15,24,34,.38),0 0 0 5px rgba(255,255,255,.34);
+  font-size:16px; font-weight:800; line-height:1.35; text-align:center;
+  pointer-events:none; opacity:0; transform:translate(-50%,-24px) scale(.94);
+  transition:opacity .18s ease, transform .24s cubic-bezier(.2,.8,.2,1);
+}
+.status-toast.show{opacity:1; transform:translate(-50%,0) scale(1)}
+.status-toast.capture{border-color:#ff6b5e; box-shadow:0 18px 50px rgba(126,26,20,.42),0 0 0 5px rgba(255,107,94,.28)}
+.status-toast.stun{border-color:#e9b949; box-shadow:0 18px 50px rgba(86,62,10,.42),0 0 0 5px rgba(233,185,73,.28)}
+.status-toast.rescue{border-color:#5ac479; box-shadow:0 18px 50px rgba(16,78,40,.38),0 0 0 5px rgba(90,196,121,.25)}
+.status-toast.danger{border-color:#ff8f62; box-shadow:0 18px 50px rgba(112,37,20,.42),0 0 0 5px rgba(255,143,98,.25)}
+.status-toast.success{border-color:#64b5f6; box-shadow:0 18px 50px rgba(16,69,104,.4),0 0 0 5px rgba(100,181,246,.25)}
+.toolbar{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px}
+.toolbar button{font-size:13px}
+.modal{position:fixed; inset:0; background:rgba(18,26,36,.55); backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; z-index:100; padding:16px}
+.modal.hidden{display:none}
+.modal .card{background:#fff; border-radius:20px; padding:24px 26px; max-width:500px; width:100%; box-shadow:0 30px 80px rgba(0,0,0,.35); max-height:88vh; overflow:auto}
+.modal h2{margin:0 0 12px; font-size:21px}
+.modal .desc{font-size:13.5px; color:#4a5a6a; line-height:1.9; margin:8px 0}
+.modal .actions{display:flex; gap:10px; justify-content:flex-end; margin-top:14px}
+.modal .actions .grow{flex:1}
+.role-picker{display:flex;flex-direction:column;gap:10px;margin:12px 0 4px}
+.role-group{border:1px solid #d8e0e8;border-radius:12px;padding:10px;background:#f8fbfd}
+.role-heading{font-size:12px;font-weight:800;color:#657586;margin-bottom:8px}
+.role-row{display:grid;grid-template-columns:82px 1fr;gap:8px;align-items:start;margin-top:6px}
+.role-owner{font-size:13px;font-weight:800;padding-top:7px}
+.role-options{display:block}
+.role-select{width:100%;height:38px;border:1px solid #9fb0c0;border-radius:10px;background:#fff;color:var(--ink);padding:0 8px;font-size:13px;font-weight:700}
+.role-desc{font-size:11px;color:#6a7a89;margin-top:4px;line-height:1.35}
+.role-note{font-size:12px;color:#6a7a89;margin:8px 0 0}
+.win-emoji{font-size:54px; text-align:center}
+@media (max-width:980px){ body{flex-direction:column} .panel{width:min(92vw,700px)} .status-toast{top:10px;max-width:calc(100vw - 24px);padding:12px 16px;font-size:16px} }
+</style>
+</head>
+<body>
+  <main class="board" id="board" aria-label="鬼抓人飞行棋棋盘">
+    <svg id="svg" viewBox="0 0 900 900"></svg>
+    <div id="rings"></div>
+    <div id="dolls"></div>
+    <div id="pieces"></div>
+    <svg id="moveLayer" viewBox="0 0 900 900" aria-hidden="true"></svg>
+  </main>
+
+  <aside class="panel">
+    <h1>👻 鬼抓人 · 飞行棋 1v3</h1>
+    <div class="turn-line"><span class="turn-dot" id="turnDot"></span><span id="turnText">准备开始</span></div>
+    <div class="dice-area">
+      <div class="dice" id="dice"><div class="face" id="face"></div></div>
+      <button class="primary" id="rollBtn" disabled>🎲 掷骰子</button>
+    </div>
+    <div class="actions-box" id="actions"></div>
+    <div class="obj-bar">
+      <span>🔐 破译 <span id="decodePips"></span></span>
+      <span id="escapeBadge" class="lock-badge">撤离未解锁</span>
+      <span style="margin-left:auto">第 <b id="roundNum">1</b> 轮</span>
+    </div>
+    <div class="players" id="players"></div>
+    <div class="status" id="status"></div>
+    <div class="toolbar">
+      <button id="soundBtn">🔊 音效开</button>
+      <button id="rulesBtn">📖 规则</button>
+      <button id="resetBtn">🔄 重开</button>
+    </div>
+  </aside>
+
+  <div class="status-toast" id="statusToast" role="status" aria-live="assertive"></div>
+
+  <div class="modal" id="setupModal">
+    <div class="card">
+      <h2>👻 鬼抓人 · 飞行棋 1v3</h2>
+      <p class="desc">
+        非对称对抗：<b>👻 鬼 ×1</b> 对阵 <b>🟡黄 / 🔵蓝 / 🟢绿 人类×3</b>，同屏轮流操作。<br>
+        <b>人类目标</b>：进入四条彩色专属道，<b>金色「密」格</b>破译密码；四条专属道的密码都要分别完成，全部完成后前往鬼出生的<b>☠格撤离门</b>，撤离 2 人获胜。<br>
+        <b>鬼的目标</b>：每次只能捆绑 1 人，并在 3 个鬼回合内送到其<b>起始点（⌂格）</b>；被放者在 2 个鬼回合内无人解救则淘汰。<br>
+        <b>角色选择</b>：开局前可分别为鬼和三名人类选择角色；颜色只代表阵营位置，技能由所选角色决定。
+      </p>
+      <p class="desc">52 格折角环形跑道；专属道最深密码点若被骰点越过会<b>回退</b>。鬼不能进入专属道。</p>
+      <div id="rolePicker" class="role-picker"></div>
+      <div class="actions"><button class="primary" id="startBtn" style="flex:1">开始对局 🎲</button></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="rulesModal">
+    <div class="card">
+      <h2>📖 完整规则</h2>
+      <p class="desc">
+        <b>阵营与胜负</b><br>
+        · 人类获胜：密码破译后，<b>撤离 2 人</b>（若仅剩最后一名人类，其撤离同样获胜）。<br>
+        · 鬼获胜：3 名人类全部被淘汰。<br><br>
+        <b>行动顺序</b><br>
+        · 四枚棋子按棋盘顺时针依次行动：<b>鬼（红）→ 绿队 → 黄队 → 蓝队</b>，之后回到鬼。<br><br>
+        <b>棋盘与人类流程</b><br>
+        1. 环形主跑道为 <b>52 格折角大环</b>，贴边展开并分布多个折角。<br>
+        2. 四条<b>彩色专属道</b>通向中央：入口印「入」，只有人类能选择进入；鬼不能从入口进入。<br>
+        3. 四条专属道各自深处都有金色<b>「密」格</b>。人类在专属道中移动时，若骰点超过密码点会按反弹规则<b>回退</b>；每次破译会记录对应颜色通道，四道全部破译后才开启撤离门。<br>
+        4. 四条专属道的密码各需破译一次，同一通道不能重复计数；四条全部完成后，鬼出生的<b>☠格</b>变为撤离门。<br><br>
+        <b>抓捕与营救</b><br>
+        · 鬼走完点数后<b>先结算落点抓捕</b>，再进入同色格跳跃选择；踩到人类即完成捆绑。鬼同一时间最多捆绑 <b>1 名人类</b>，捆绑期间不能再次抓捕。<br>
+        · 被捆绑者会随鬼同步移动，须在 <b>3 个鬼回合</b>内被送到其<b>起始点（⌂）</b>，超时则挣脱并获得免疫。<br>
+        · 人类踩到鬼所在格会令鬼<b>眩晕 1 回合</b>；若鬼正捆绑着人，会同时把被捆绑者救出。<br>
+        · 鬼将人放到起始点后即可继续移动；被放者进入 <b>2 个鬼回合</b>倒计时，另一名人类踩到该起始点才能解救，否则淘汰。<br><br>
+        <b>移动与跳跃</b><br>
+        · 掷骰后棋盘会点亮所有可达落点，直接点击目标格移动；标签会标明顺时针、逆时针、深入或折返，出道即停。<br>
+        · 停在与<b>自身颜色相同</b>的格子时，地图会点亮长跳与两个最近同色格；点击目标格跳跃，点击自己表示不跳跃。入口格同样可以触发。<br>
+        · 鬼从 <b>42 号格长飞到 2 号格</b>时，会穿过左侧黄色专属道；若路径格内有人类，飞越时会先直接将其捆绑。<br><br>
+        <b>技能</b><br>
+        · 开局只选择角色，不选择技能；每个角色可拥有多个主动技能和被动技能。<br>
+        · 当前角色池：👻 厂长、鹿头；✈ 军人、盲女、光谱。开局选择角色，角色可以拥有多个主动与被动技能。<br>
+        · 👻鬼的阵营技「阴阳+1」仍然存在：掷骰后地图会同时显示原点数与 +1 点数的可达格，点击目标格即确认本次移动步数。<br>
+        · 军人：晕眩弹无视距离与免疫，可在任意角色回合发动，令鬼眩晕 1 回合，一局一次；身强体壮免疫鬼的减速；鬼一旦被眩晕，会立即解救其捆绑的人类。盲女：心灵预警在距离鬼不超过 6 格时向远离鬼的方向移动 1 格，每回合一次；与鬼同格时可自行选择移动方向，移动后若停在自身同色格，可继续选择跳跃；解密专家可在密码点前一格完成破译。光谱：连续两个自身回合开始时处于鬼的 6 格范围内，鬼眩晕 1 回合。<br>
+        · 厂长：可放置最多两个布娃娃，放置间隔至少 2 轮，每个自己的回合可与一个布娃娃交换一次位置，人类踩到布娃娃会将其清除。鹿头：钩爪可沿指定方向抓回 3 格内的人类并捆绑，站在专属道入口时也可抓出入口内 3 格的人，冷却 3 回合。厂长与鹿头都可攻击相邻人类，使其接下来两个自身回合少走 1 格，不叠加。
+      </p>
+      <div class="actions"><button class="primary" id="rulesClose" style="flex:1">知道了</button></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="endModal">
+    <div class="card">
+      <div class="win-emoji" id="endEmoji">🏆</div>
+      <h2 style="text-align:center" id="endText"></h2>
+      <p class="desc" style="text-align:center" id="endSub"></p>
+      <div class="actions"><button class="primary grow" id="againBtn">再来一局</button></div>
+    </div>
+  </div>
+<script>
+
+'use strict';
+/* ================= 基础工具 ================= */
+const $=s=>document.querySelector(s);
+const svg=$('#svg'), ringsEl=$('#rings'), dollsEl=$('#dolls'), piecesEl=$('#pieces'), moveLayerEl=$('#moveLayer');
+const diceEl=$('#dice'), face=$('#face'), rollBtn=$('#rollBtn'), actionsEl=$('#actions');
+const statusEl=$('#status'), playersEl=$('#players'), turnDot=$('#turnDot'), turnText=$('#turnText');
+const decodePipsEl=$('#decodePips'), escapeBadge=$('#escapeBadge'), roundNumEl=$('#roundNum');
+const statusToastEl=$('#statusToast');
+const setupModal=$('#setupModal'), rulesModal=$('#rulesModal'), endModal=$('#endModal');
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const SVGNS='http://www.w3.org/2000/svg';
+function el(tag,attrs,parent){const n=document.createElementNS(SVGNS,tag);for(const k in attrs)n.setAttribute(k,attrs[k]);if(parent)parent.appendChild(n);return n}
+
+/* ================= 音效 ================= */
+let audioCtx=null, muted=false;
+function ac(){
+  if(muted)return null;
+  if(!audioCtx){const C=window.AudioContext||window.webkitAudioContext;if(C)audioCtx=new C();}
+  if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();
+  return audioCtx;
+}
+function tone(f0,f1,dur,type,vol,delay){
+  const c=ac(); if(!c)return;
+  const t=c.currentTime+(delay||0);
+  const o=c.createOscillator(), g=c.createGain();
+  o.type=type||'sine';
+  o.frequency.setValueAtTime(f0,t);
+  if(f1)o.frequency.exponentialRampToValueAtTime(Math.max(f1,20),t+dur);
+  g.gain.setValueAtTime(vol||.12,t);
+  g.gain.exponentialRampToValueAtTime(.001,t+dur);
+  o.connect(g); g.connect(c.destination);
+  o.start(t); o.stop(t+dur+.03);
+}
+const SFX={
+  step:i=>tone(480+((i||0)%8)*36,null,.06,'square',.05),
+  dice:()=>{for(let k=0;k<5;k++)tone(220+Math.random()*320,null,.045,'triangle',.06,k*.08)},
+  jump:()=>{tone(620,null,.07,'square',.09);tone(830,null,.08,'square',.09,.08)},
+  leap:()=>tone(380,1250,.42,'sine',.15),
+  capture:()=>tone(760,180,.32,'sawtooth',.13),
+  decode:()=>{tone(700,null,.1,'sine',.12);tone(940,null,.14,'sine',.12,.1)},
+  unlock:()=>{[523,659,784].forEach((f,i)=>tone(f,null,.14,'triangle',.13,i*.1))},
+  rescue:()=>{tone(500,900,.2,'sine',.13)},
+  kill:()=>tone(300,80,.4,'sawtooth',.14),
+  win:()=>{[523,659,784,1047].forEach((f,i)=>tone(f,null,.18,'triangle',.14,i*.14))},
+  lose:()=>{[440,349,262].forEach((f,i)=>tone(f,null,.24,'triangle',.13,i*.18))},
+  deny:()=>tone(190,140,.18,'square',.07),
+};
+
+const RING=52;
+const sc=v=>v*900/474;
+const REF_PATH=[[82,147],[107,147],[134,158],[157,135],[146,107],[146,82],[157,53],[185,44],[211,44],[237,44],[263,44],[289,44],[317,54],[328,82],[328,108],[317,135],[340,158],[367,147],[393,147],[420,158],[430,186],[430,211],[430,237],[430,261],[429,287],[420,315],[393,326],[367,326],[340,315],[317,338],[328,365],[328,391],[317,419],[289,429],[263,429],[237,429],[211,429],[185,429],[157,419],[146,391],[146,366],[157,338],[134,315],[107,326],[81,326],[53,315],[44,288],[44,262],[44,237],[44,211],[44,186],[53,158]];
+const TRACK=REF_PATH.map(([x,y])=>({x:sc(x),y:sc(y)}));
+const CELL_COLORS=['yellow','blue','red','green','yellow','blue','red','green','yellow','blue','red','green','yellow','blue','red','green','yellow','blue','red','green','yellow','blue','red','green','yellow','blue','red','green','yellow','blue','red','green','yellow','blue','red','green','yellow','blue','red','green','yellow','blue','red','green','yellow','blue','red','green','yellow','blue','red','green'];
+const ORDER=['yellow','blue','red','green'];
+const META={
+  yellow:{label:'黄队',main:'#f0b400',cell:'#ffd54d',deep:'#a97c00',start:51},
+  blue:{label:'蓝队',main:'#1f7fd1',cell:'#6cb6f2',deep:'#14568c',start:12},
+  red:{label:'鬼',main:'#e04a3a',cell:'#f7a99e',deep:'#a02818',start:25},
+  green:{label:'绿队',main:'#3d9e3a',cell:'#83cd72',deep:'#276f25',start:38},
+  human:{label:'人类',main:'#1fa88c',cell:'#7fd0c0',deep:'#0c6b59'},
+};
+const LANE_ORDER=['top','right','bottom','left'];
+const LANE_LABEL={top:'蓝色专属道',right:'红色专属道',bottom:'绿色专属道',left:'黄色专属道'};
+const LANE_CORNER={top:{x:800,y:100},right:{x:800,y:800},bottom:{x:100,y:800},left:{x:100,y:100}};
+const LANE_COLOR={top:'blue',right:'red',bottom:'green',left:'yellow'};
+const LANE_ENTRY_ABS={top:9,right:22,bottom:35,left:48};
+const LANE_LEN=6;
+const LANES={
+  top:{cells:[{x:sc(237),y:sc(81)},{x:sc(237),y:sc(107)},{x:sc(237),y:sc(133)},{x:sc(237),y:sc(158)},{x:sc(237),y:sc(184)},{x:sc(237),y:sc(214)}]},
+  right:{cells:[{x:sc(393),y:sc(237)},{x:sc(366),y:sc(237)},{x:sc(341),y:sc(237)},{x:sc(316),y:sc(237)},{x:sc(290),y:sc(237)},{x:sc(259),y:sc(237)}]},
+  bottom:{cells:[{x:sc(237),y:sc(393)},{x:sc(237),y:sc(367)},{x:sc(237),y:sc(340)},{x:sc(237),y:sc(315)},{x:sc(237),y:sc(289)},{x:sc(237),y:sc(259)}]},
+  left:{cells:[{x:sc(81),y:sc(237)},{x:sc(107),y:sc(237)},{x:sc(132),y:sc(237)},{x:sc(158),y:sc(237)},{x:sc(184),y:sc(237)},{x:sc(213),y:sc(237)}]},
+};
+const EXIT_ABS=25, DECODE_NEED=4, ESCAPE_NEED=2;
+const LONG_JUMPS={3:15,16:28,29:41,42:2};
+const LONG_JUMP_CAPTURE_CELLS={42:{type:'runway',color:'left',idx:3}};
+function cellColor(abs){return CELL_COLORS[abs]}
+function ringDist(a,b){const d=Math.abs(a-b)%RING;return Math.min(d,RING-d)}
+function laneOfEntry(abs){for(const k in LANE_ENTRY_ABS)if(LANE_ENTRY_ABS[k]===abs)return k;return null}
+/* ================= 座位 ================= */
+const HUMAN_COLORS=['green','yellow','blue'];
+const ROLE_POOLS={
+  ghost:[
+    {
+      id:'factory-owner', charName:'厂长', desc:'利用布娃娃换位与近身干扰控制棋盘。',
+      skills:[
+        {id:'doll-substitute',type:'doll',name:'娃娃替身',cd:0,desc:'放置布娃娃，每回合可与一个布娃娃交换一次位置；场上最多两个，放置间隔至少 2 回合'},
+      ],
+      passives:[
+        {id:'enhanced-attack',type:'adjacentAttack',name:'攻击范围强化',desc:'可以攻击相邻格的人类；攻击不捆绑，但使其移动点数减 1，持续 2 个自身回合，不叠加'},
+      ],
+    },
+    {
+      id:'deer-head', charName:'鹿头', desc:'利用钩爪把远距离人类拉回并捆绑。',
+      skills:[
+        {id:'hook',type:'hook',name:'钩爪',cd:3,range:3,desc:'指定方向抓取 3 格内的人类并捆绑；站在专属道入口时，可抓出入口内 3 格内的人类'},
+      ],
+      passives:[
+        {id:'enhanced-attack',type:'adjacentAttack',name:'攻击范围强化',desc:'可以攻击相邻格的人类；攻击不捆绑，但使其移动点数减 1，持续 2 个自身回合，不叠加'},
+      ],
+    },
+  ],
+  human:[
+    {
+      id:'soldier', charName:'军人', desc:'拥有一次性强制控制与减速免疫。',
+      skills:[
+        {id:'stun-shot',type:'stunShot',name:'晕眩弹',cd:0,oncePerGame:true,desc:'无视距离与免疫，可在任意角色回合使鬼眩晕 1 回合；一局仅限一次'},
+      ],
+      passives:[
+        {id:'sturdy',type:'slowImmune',name:'身强体壮',desc:'无视鬼的减速效果'},
+      ],
+    },
+    {
+      id:'blind-girl', charName:'盲女', desc:'依靠心灵预警脱离鬼的追击，并能提前解密。',
+      skills:[
+        {id:'mind-warning',type:'mindWarning',name:'心灵预警',cd:0,range:6,perRound:true,desc:'与鬼距离不超过 6 时，可移动 1 格；同格时自行选择方向，落同色格可继续跳跃；每回合限一次'},
+      ],
+      passives:[
+        {id:'decode-expert',type:'decodeExpert',value:1,name:'解密专家',desc:'距离密码格 1 格时也可以完成解密'},
+      ],
+    },
+    {
+      id:'spectrum', charName:'光谱', desc:'持续靠近鬼时会蓄能手电并反制。',
+      skills:[],
+      passives:[
+        {id:'flashlight-stun',type:'flashlightStun',range:6,turns:2,name:'晕眩手电',desc:'连续两个自身回合开始时位于鬼的 6 格范围内，使鬼眩晕 1 回合'},
+      ],
+    },
+  ],
+};
+const DEFAULT_ROLE_PICK={ghost:'factory-owner',yellow:'soldier',blue:'blind-girl',green:'spectrum'};
+const rolePick={...DEFAULT_ROLE_PICK};
+let SEATS=[];
+function rolePool(owner){return owner==='ghost'?ROLE_POOLS.ghost:ROLE_POOLS.human}
+function roleById(owner,id){return rolePool(owner).find(r=>r.id===id)||rolePool(owner)[0]}
+function makeSeat(color,role,isGhost){
+  return {key:isGhost?'ghost':color,color,name:META[color].label,isGhost,charName:role.charName,roleKey:role.id,roleDesc:role.desc||'',skills:(role.skills||[]).map(sk=>({...sk,cdLeft:0})),passives:(role.passives||[]).map(pv=>({...pv}))};
+}
+function buildSeats(){
+  SEATS=[];
+  SEATS.push(makeSeat('red',roleById('ghost',rolePick.ghost),true));
+  for(const color of HUMAN_COLORS)SEATS.push(makeSeat(color,roleById(color,rolePick[color]),false));
+}
+function saveRolePick(){
+  try{if(typeof localStorage!=='undefined')localStorage.setItem('fxqRolePick',JSON.stringify(rolePick))}catch(e){}
+}
+function loadRolePick(){
+  try{
+    if(typeof localStorage==='undefined')return;
+    const saved=JSON.parse(localStorage.getItem('fxqRolePick')||'{}');
+    for(const owner of ['ghost',...HUMAN_COLORS]){
+      if(rolePool(owner).some(r=>r.id===saved[owner]))rolePick[owner]=saved[owner];
+    }
+  }catch(e){}
+}
+
+/* ================= 绘制棋盘（原图背景 + 专属道与游戏层） ================= */
+let pipsNodes=[], cornerStatusText=[], moveTargetsLayer=null, lockNode=null, exitGlow=null, exitMark=null;
+function buildBoard(){
+  svg.innerHTML='';
+  moveLayerEl.innerHTML='';
+  /* 原图作为底图：外环形状、颜色分布、虚线与中心装饰全部来自原图 */
+  el('image',{x:0,y:0,width:900,height:900,href:'./assets/flying-chess-board-reference.png',preserveAspectRatio:'none'},svg);
+  TRACK.forEach((pt,i)=>{
+    el('circle',{cx:pt.x,cy:pt.y,r:10,fill:'rgba(255,255,255,.9)',stroke:'rgba(30,36,44,.65)','stroke-width':1.5},svg);
+    const nt=el('text',{x:pt.x,y:pt.y+4,'font-size':11,'text-anchor':'middle',fill:'#1d2733','font-weight':800},svg);
+    nt.textContent=i;
+  });
+  /* 专属道底色，叠在原图中心通道上 */
+  for(const k of LANE_ORDER){
+    const cs=LANES[k].cells;
+    for(let i=0;i<cs.length-1;i++){
+      el('line',{x1:cs[i].x,y1:cs[i].y,x2:cs[i+1].x,y2:cs[i+1].y,stroke:META[LANE_COLOR[k]].main,'stroke-width':40,'stroke-linecap':'round',opacity:.42},svg);
+    }
+  }
+  /* 专属道格子 + 密码点 */
+  for(const k of LANE_ORDER){
+    LANES[k].cells.forEach((cpt,i)=>{
+      const isPwd=(i===LANE_LEN-1), owner=LANE_COLOR[k];
+      el('rect',{x:cpt.x-26,y:cpt.y-26,width:52,height:52,rx:10,fill:isPwd?'rgba(243,201,78,.94)':META[owner].cell,opacity:isPwd?1:.88,stroke:'rgba(255,255,255,.9)','stroke-width':2},svg);
+      el('circle',{cx:cpt.x,cy:cpt.y,r:14,fill:'rgba(255,253,247,.92)',stroke:'rgba(40,30,10,.15)','stroke-width':1},svg);
+      if(isPwd){
+        const t=el('text',{x:cpt.x,y:cpt.y+8,'font-size':20,'text-anchor':'middle',fill:'#8a6400','font-weight':800},svg);
+        t.textContent='密';
+      }
+    });
+  }
+  /* 出生点 / 鬼出生（撤离门）标记 */
+  for(const c of ['yellow','blue','green']){
+    const q=TRACK[META[c].start];
+    el('circle',{cx:q.x,cy:q.y,r:21,fill:'rgba(255,255,255,.18)',stroke:META[c].main,'stroke-width':3},svg);
+    const t=el('text',{x:q.x,y:q.y+7,'font-size':20,'text-anchor':'middle',fill:META[c].deep,'font-family':'"Segoe UI Symbol","Noto Sans Symbols",sans-serif','font-weight':700},svg);
+    t.textContent='\u2302';
+  }
+  const gp=TRACK[EXIT_ABS];
+  el('circle',{cx:gp.x,cy:gp.y,r:21,fill:'rgba(122,61,240,.18)',stroke:META.red.main,'stroke-width':3},svg);
+  const gt=el('text',{x:gp.x,y:gp.y+7,'font-size':20,'text-anchor':'middle',fill:META.red.deep,'font-family':'"Segoe UI Symbol","Noto Sans Symbols",sans-serif'},svg);
+  gt.textContent='\u2620';
+  /* 道入口标记 */
+  for(const k of LANE_ORDER){
+    const a=LANE_ENTRY_ABS[k],q=TRACK[a];
+    const t=el('text',{x:q.x,y:q.y+7,'font-size':18,'text-anchor':'middle',fill:META.human.deep,'font-weight':800},svg);
+    t.textContent='入';
+  }
+  /* 四条专属道的密码状态放进各自的停机场 */
+  pipsNodes=[]; cornerStatusText=[];
+  LANE_ORDER.forEach((lane,i)=>{
+    const pos=LANE_CORNER[lane], color=META[LANE_COLOR[lane]].main, deep=META[LANE_COLOR[lane]].deep;
+    const g=el('g',{},svg);
+    el('rect',{x:pos.x-88,y:pos.y-54,width:176,height:108,rx:24,fill:'rgba(255,253,247,.91)',stroke:color,'stroke-width':5},g);
+    el('rect',{x:pos.x-78,y:pos.y-44,width:156,height:88,rx:19,fill:'none',stroke:'rgba(255,255,255,.9)','stroke-width':2},g);
+    el('circle',{cx:pos.x-52,cy:pos.y,r:25,fill:'#eef2f5',stroke:color,'stroke-width':4},g);
+    const lock=el('text',{x:pos.x-52,y:pos.y+7,'font-size':23,'text-anchor':'middle',fill:deep,'font-weight':800},g);
+    lock.textContent='密';
+    const title=el('text',{x:pos.x+8,y:pos.y-12,'font-size':17,'text-anchor':'middle',fill:'#27313d','font-weight':800},g);
+    title.textContent=LANE_LABEL[lane].replace('专属道','通道');
+    const st=el('text',{x:pos.x+8,y:pos.y+20,'font-size':17,'text-anchor':'middle',fill:'#788693','font-weight':800},g);
+    st.textContent='未破译';
+    cornerStatusText.push(st);
+    pipsNodes.push(el('circle',{cx:pos.x-52,cy:pos.y,r:15,fill:'#d5dbe2',stroke:'#9aa5b1','stroke-width':2},g));
+  });
+  /* 撤离门高亮 + 状态文字 */
+  exitGlow=el('rect',{x:gp.x-29,y:gp.y-29,width:58,height:58,rx:12,fill:'none',stroke:'#3d9e3a','stroke-width':5,opacity:0},svg);
+  exitMark=el('g',{opacity:0},svg);
+  el('circle',{cx:gp.x,cy:gp.y,r:24,fill:'none',stroke:'#fff','stroke-width':4,'stroke-dasharray':'6 5'},exitMark);
+  lockNode=el('text',{x:450,y:866,'font-size':22,'text-anchor':'middle','font-weight':700,fill:'#8a8f98'},svg);
+  lockNode.textContent='\uD83D\uDD12 撤离未解锁';
+  moveTargetsLayer=el('g',{id:'moveTargets'},moveLayerEl);
+}
+/* ================= 棋子 ================= */
+let pieces=[];
+function createPieces(){
+  piecesEl.innerHTML=''; ringsEl.innerHTML=''; pieces=[];
+  for(let s=0;s<SEATS.length;s++){
+    const seat=SEATS[s];
+    const d=document.createElement('button');
+    d.type='button'; d.className='piece '+seat.color+(seat.isGhost?' ghost':'');
+    const sp=document.createElement('span');
+    sp.textContent=seat.isGhost?'\uD83D\uDC7D':'\u2708';
+    d.appendChild(sp);
+    d.addEventListener('click',()=>{
+      if(!G||G.over||G.phase!=='jump')return;
+      const jumpIndex=G.pendingJump&&G.pendingJump.pieceIndex!==undefined?G.pendingJump.pieceIndex:G.turn;
+      if(jumpIndex===s)declineLongJump();
+    });
+    piecesEl.appendChild(d);
+    pieces.push({seat:seat,color:seat.color,loc:{type:'ring',abs:META[seat.color].start},
+      status:'free',carryT:0,prisonT:0,holdTimer:false,stunTurns:0,slowTurns:0,flashTurns:0,shield:0,immune:0,el:d});
+  }
+}
+
+function renderDolls(){
+  if(!dollsEl)return;
+  dollsEl.innerHTML='';
+  if(typeof G==='undefined'||!G||!Array.isArray(G.dolls))return;
+  for(const d of G.dolls){
+    if(!d.loc||d.loc.type!=='ring')continue;
+    const pt=TRACK[d.loc.abs], node=document.createElement('div');
+    node.className='doll';
+    node.style.left=(pt.x/9)+'%';
+    node.style.top=(pt.y/9)+'%';
+    node.title='布娃娃：人类踩到可清除';
+    const sp=document.createElement('span');
+    sp.textContent='🧸';
+    node.appendChild(sp);
+    dollsEl.appendChild(node);
+  }
+}
+function hasPassive(p,type){
+  return !!(p&&p.seat&&p.seat.passives&&p.seat.passives.some(pv=>pv.type===type));
+}
+function passiveOf(p,type){
+  return p&&p.seat&&p.seat.passives?p.seat.passives.find(pv=>pv.type===type)||null:null;
+}
+function pieceDistance(a,b){
+  if(!a||!b||!a.loc||!b.loc)return Infinity;
+  if(a.loc.type==='ring'&&b.loc.type==='ring')return ringDist(a.loc.abs,b.loc.abs);
+  if(a.loc.type==='runway'&&b.loc.type==='runway'){
+    return a.loc.color===b.loc.color?Math.abs(a.loc.idx-b.loc.idx):Infinity;
+  }
+  const lane=a.loc.type==='runway'?a:(b.loc.type==='runway'?b:null);
+  const ring=lane===a?b:(lane===b?a:null);
+  if(!lane||!ring||ring.loc.type!=='ring')return Infinity;
+  return lane.loc.idx+ringDist(ring.loc.abs,LANE_ENTRY_ABS[lane.loc.color]);
+}
+function locDistance(a,b){return pieceDistance({loc:a},{loc:b})}
+function canDecodeAt(p){
+  if(!p||p.seat.isGhost||p.status!=='free'||!p.loc||p.loc.type!=='runway')return false;
+  if(G.decodedLanes&&G.decodedLanes.includes(p.loc.color))return false;
+  return p.loc.idx===LANE_LEN||(hasPassive(p,'decodeExpert')&&p.loc.idx===LANE_LEN-1);
+}
+function clearDollsAt(loc){
+  if(!G||!Array.isArray(G.dolls)||!loc||loc.type!=='ring')return 0;
+  const before=G.dolls.length;
+  G.dolls=G.dolls.filter(d=>!(d.loc.type==='ring'&&d.loc.abs===loc.abs));
+  const removed=before-G.dolls.length;
+  if(removed){renderDolls();SFX.jump();log('🧸 布娃娃被人类踩到并清除。')}
+  return removed;
+}
+
+function pointForLoc(loc){
+  if(!loc)return{x:-100,y:-100};
+  if(loc.type==='ring'){const t=TRACK[loc.abs];return{x:t.x,y:t.y}}
+  const c=LANES[loc.color].cells[loc.idx-1];return{x:c.x,y:c.y};
+}
+function pointFor(p){
+  const loc=(p.status==='carried'&&!p.seat.isGhost&&ghostPiece()&&ghostPiece().loc)?ghostPiece().loc:p.loc;
+  return pointForLoc(loc);
+}
+function renderPieces(){
+  syncCarriedToGhost();
+  const groups=new Map();
+  for(const p of pieces){
+    if(p.status==='escaped'||p.status==='out'){p.el.classList.add('hidden');continue}
+    p.el.classList.remove('hidden');
+    const pt=pointFor(p);
+    const key=Math.round(pt.x)+'_'+Math.round(pt.y);
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push({p,pt});
+  }
+  for(const list of groups.values()){
+    const n=list.length;
+    list.forEach((item,off)=>{
+      const p=item.p, pt=item.pt;
+      let dx=0,dy=0,s=1;
+      if(p.status==='carried')s=.6;
+      if(n>1){const k=off-(n-1)/2;dx=k*15;dy=k*9;if(p.status!=='carried'&&s===1)s=.85}
+      p.el.style.left=((pt.x+dx)/9)+'%';
+      p.el.style.top=((pt.y+dy)/9)+'%';
+      p.el.style.setProperty('--s',s);
+      p.el.classList.toggle('chained',p.status==='prison'||p.status==='carried');
+      p.el.classList.toggle('carried',p.status==='carried');
+      p.el.classList.toggle('shielded',p.shield>0);
+      p.el.classList.toggle('immune',p.immune>0);
+    });
+  }
+  renderDolls();
+}
+
+/* ================= 骰子/* ================= 骰子 ================= */
+const PIPS={1:[4],2:[2,6],3:[2,4,6],4:[0,2,6,8],5:[0,2,4,6,8],6:[0,2,3,5,6,8]};
+function buildFace(){
+  face.innerHTML='';
+  for(let i=0;i<9;i++){const c=document.createElement('i');c.appendChild(document.createElement('b'));face.appendChild(c)}
+}
+function setDice(v){
+  const on=v&&PIPS[v]||[];
+  [...face.children].forEach((c,i)=>c.classList.toggle('on',on.includes(i)));
+}
+async function diceAnim(final){
+  diceEl.classList.add('rolling');
+  for(let k=0;k<9;k++){setDice(1+Math.floor(Math.random()*6));await sleep(65)}
+  diceEl.classList.remove('rolling');
+  setDice(final);
+}
+
+/* ================= 游戏状态 ================= */
+let G=null;
+const logs=[];
+function log(t){
+  logs.unshift(t);
+  if(logs.length>4)logs.pop();
+  statusEl.innerHTML=logs.map((s,i)=>'<div'+(i===0?' style="font-weight:700"':'')+'>'+s+'</div>').join('');
+}
+const statusAlertQueue=[];
+let statusAlertTimer=null;
+function showStatusAlert(icon,text,kind='info'){
+  if(!statusToastEl)return;
+  statusAlertQueue.push({icon,text,kind});
+  if(!statusAlertTimer)showNextStatusAlert();
+}
+function showNextStatusAlert(){
+  const item=statusAlertQueue.shift();
+  if(!item){
+    statusAlertTimer=null;
+    return;
+  }
+  statusToastEl.textContent=item.icon+' '+item.text;
+  statusToastEl.className='status-toast '+item.kind;
+  void statusToastEl.offsetWidth;
+  statusToastEl.classList.add('show');
+  statusAlertTimer=setTimeout(()=>{
+    statusToastEl.classList.remove('show');
+    statusAlertTimer=setTimeout(()=>{
+      statusAlertTimer=null;
+      showNextStatusAlert();
+    },220);
+  },1900);
+}
+function clearStatusAlerts(){
+  clearTimeout(statusAlertTimer);
+  statusAlertTimer=null;
+  statusAlertQueue.length=0;
+  if(statusToastEl)statusToastEl.classList.remove('show');
+}
+function ghostPiece(){return pieces[0]}
+function seatPiece(){return pieces[G.turn]}
+function jumpPiece(){
+  if(!G||!G.pendingJump)return null;
+  const index=G.pendingJump.pieceIndex===undefined?G.turn:G.pendingJump.pieceIndex;
+  return pieces[index]||null;
+}
+function carriedHumans(){return pieces.filter(p=>!p.seat.isGhost&&p.status==='carried')}
+function ghostHasCarried(){return carriedHumans().length>0}
+function syncCarriedToGhost(){
+  const gp=ghostPiece();
+  if(!gp||!gp.loc)return;
+  for(const p of carriedHumans())p.loc={...gp.loc};
+}
+function startGame(){
+  buildSeats();
+  G={turn:0,round:1,dice:0,baseDice:0,plusUsed:false,phase:'roll',decode:0,decodedLanes:[],unlocked:false,over:false,
+     skillUsed:false,pendingExtra:0,animating:false,declineEntry:false,pendingJump:null,pendingMindWarning:null,
+     dolls:[],dollPlacedRound:-99,dollPlacedThisTurn:false,dollSwappedThisTurn:false,
+     attackUsed:false,pendingHook:null,hookReturnPhase:'post',slowApplied:false};
+  clearStatusAlerts();
+  createPieces(); renderPieces(); renderDolls(); setDice(0); updateObjective();
+  logs.length=0;
+  log('对局开始！鬼先手。四条彩色专属道的深处密码都要完成破译。');
+  beginTurn();
+}
+function updateObjective(){
+  const decoded=G.decodedLanes||[];
+  for(let i=0;i<pipsNodes.length;i++){
+    const lane=LANE_ORDER[i], done=decoded.includes(lane), color=META[LANE_COLOR[lane]].main;
+    pipsNodes[i].setAttribute('fill',done?color:'#d5dbe2');
+    pipsNodes[i].setAttribute('stroke',done?color:'#9aa5b1');
+    if(cornerStatusText[i]){
+      cornerStatusText[i].textContent=done?'已破译':'未破译';
+      cornerStatusText[i].setAttribute('fill',done?color:'#788693');
+    }
+  }
+  decodePipsEl.innerHTML='';
+  for(let i=0;i<DECODE_NEED;i++){
+    const lane=LANE_ORDER[i], done=decoded.includes(lane);
+    const s=document.createElement('span');
+    s.className='pip'+(done?' on':'')+(done&&G.unlocked?' gold':'');
+    s.title=(done?'已破译：':'尚未破译：')+LANE_LABEL[lane];
+    if(done)s.style.background=META[LANE_COLOR[lane]].main;
+    decodePipsEl.appendChild(s);
+  }
+  if(G.unlocked){
+    escapeBadge.textContent='撤离门已开启 '+escapedCount()+'/'+ESCAPE_NEED;
+    escapeBadge.classList.add('open');
+    lockNode.textContent='\uD83D\uDD13 撤离已开启';
+    lockNode.setAttribute('fill','#2c7a2a');
+    exitGlow.setAttribute('opacity','.9');
+    exitMark.setAttribute('opacity','1');
+  }else{
+    escapeBadge.textContent='撤离未解锁';
+    escapeBadge.classList.remove('open');
+    lockNode.textContent='\uD83D\uDD12 撤离未解锁';
+    lockNode.setAttribute('fill','#8a8f98');
+    exitGlow.setAttribute('opacity','0');
+    exitMark.setAttribute('opacity','0');
+  }
+  roundNumEl.textContent=G.round;
+}
+function escapedCount(){return pieces.filter(p=>p.status==='escaped').length}
+function aliveHumans(){return pieces.filter(p=>!p.seat.isGhost&&p.status!=='escaped'&&p.status!=='out')}
+
+/* ================= 移动引擎 ================= */
+/* dir: 环形 +1顺时针 / -1逆时针；专属道 +1深入 / -1折返 */
+function advance(loc,dir){
+  if(loc.type==='ring')return{type:'ring',abs:(loc.abs+dir+RING)%RING};
+  if(dir===1)return loc.idx>=LANE_LEN?{...loc}:{type:'runway',color:loc.color,idx:loc.idx+1};
+  return loc.idx<=1?{type:'ring',abs:LANE_ENTRY_ABS[loc.color]}:{type:'runway',color:loc.color,idx:loc.idx-1};
+}
+function buildSteps(loc,dir,d){
+  const steps=[];
+  if(loc.type==='ring'){
+    let cur=loc;
+    for(let i=0;i<d;i++){cur=advance(cur,dir);steps.push({...cur})}
+    return steps;
+  }
+  if(dir===-1){
+    let idx=loc.idx;
+    for(let i=0;i<d;i++){
+      if(idx<=1){
+        steps.push({type:'ring',abs:LANE_ENTRY_ABS[loc.color]});
+        break;
+      }
+      idx--;
+      steps.push({type:'runway',color:loc.color,idx});
+    }
+    return steps;
+  }
+  let idx=loc.idx, way=1;
+  for(let i=0;i<d;i++){
+    let next=idx+way;
+    if(next>LANE_LEN){way=-1;next=LANE_LEN-1}
+    else if(next<1){
+      steps.push({type:'ring',abs:LANE_ENTRY_ABS[loc.color]});
+      break;
+    }
+    idx=next;
+    steps.push({type:'runway',color:loc.color,idx});
+  }
+  return steps;
+}
+function jumpSteps(loc,dir,color){
+  if(loc.type!=='ring')return null;
+  if(cellColor(loc.abs)!==color)return null;
+  const isLong=LONG_JUMPS[loc.abs]!==undefined;
+  const longTarget=isLong?LONG_JUMPS[loc.abs]:null;
+  function nearest(d){
+    let abs=loc.abs;
+    for(let i=1;i<=RING;i++){
+      abs=(abs+d+RING)%RING;
+      if(cellColor(abs)===color)return abs;
+    }
+    return null;
+  }
+  return {long:isLong,longFrom:isLong?loc.abs:null,longTarget,cw:nearest(1),ccw:nearest(-1)};
+}
+function locEq(a,b){
+  if(!a||!b)return false;
+  if(a.type!==b.type)return false;
+  if(a.type==='ring')return a.abs===b.abs;
+  return a.color===b.color&&a.idx===b.idx;
+}
+function dirOptions(p){
+  if(p.loc.type==='runway'){
+    if(p.loc.idx>=LANE_LEN)return[{dir:-1,label:'⬇ 折返出口'}];
+    return[{dir:1,label:'⬆ 深入密码点'},{dir:-1,label:'⬇ 折返出口'}];
+  }
+  return[{dir:1,label:'⟳ 顺时针'},{dir:-1,label:'⟲ 逆时针'}];
+}
+function locKey(loc){return loc.type==='ring'?'r'+loc.abs:'l'+loc.color+loc.idx}
+function moveDestinationOptions(p){
+  if(!p||!p.loc||p.status!=='free')return [];
+  const out=[];
+  if(G.phase==='jump'){
+    const js=G.pendingJump||{};
+    out.push({loc:{...p.loc},kind:'noJump',tag:'停',label:'点击自己不跳'});
+    if(js.long&&js.longTarget!==null)out.push({loc:{type:'ring',abs:js.longTarget},kind:'jump',target:js.longTarget,tag:'长',label:'长跳到 '+js.longTarget});
+    if(js.cw!==null&&js.cw!==undefined)out.push({loc:{type:'ring',abs:js.cw},kind:'jump',target:js.cw,tag:'顺',label:'顺时针 '+js.cw});
+    if(js.ccw!==null&&js.ccw!==undefined)out.push({loc:{type:'ring',abs:js.ccw},kind:'jump',target:js.ccw,tag:'逆',label:'逆时针 '+js.ccw});
+    return out;
+  }
+  if(G.phase==='dir'){
+    const diceChoices=[];
+    if(p.seat.isGhost&&G.pendingExtra===0){
+      diceChoices.push({dice:G.baseDice,plusUsed:false,label:'原 '+G.baseDice+' 步'});
+      diceChoices.push({dice:G.baseDice+1,plusUsed:true,label:'+1 · '+(G.baseDice+1)+' 步'});
+    }else{
+      const distance=G.pendingExtra>0?G.pendingExtra:G.dice;
+      diceChoices.push({dice:distance,plusUsed:G.plusUsed,label:distance+' 步'});
+    }
+    for(const choice of diceChoices){
+      for(const o of dirOptions(p)){
+        const steps=buildSteps(p.loc,o.dir,choice.dice);
+        const dest=steps.length?steps[steps.length-1]:{...p.loc};
+        const bounced=o.dir===1&&steps.some((step,i)=>i>0&&step.type==='runway'&&steps[i-1].type==='runway'&&step.idx<steps[i-1].idx);
+        const returnedOrigin=bounced&&locEq(dest,p.loc);
+        if(locEq(dest,p.loc)&&!returnedOrigin)continue;
+        const exitsLane=p.loc.type==='runway'&&dest.type==='ring';
+        const tag=p.loc.type==='runway'?((exitsLane||returnedOrigin)?'原点':(o.dir===1?(bounced?'反弹':'深入'):'折返')):(o.dir===1?'顺':'逆');
+        const label=choice.label+' · '+((exitsLane||returnedOrigin)?'回到原点':(bounced?'反弹回退':tag));
+        out.push({loc:dest,dir:o.dir,dice:choice.dice,plusUsed:choice.plusUsed,extra:G.pendingExtra>0,kind:'move',tag,label});
+      }
+    }
+  }
+  if(canEnterLane(p)){
+    const lane=laneOfEntry(p.loc.abs), dest={type:'runway',color:lane,idx:1};
+    out.push({loc:dest,kind:'lane',tag:'入',label:'进入专属道'});
+  }
+  const seen=new Set();
+  return out.filter(t=>{const k=locKey(t.loc);if(seen.has(k))return false;seen.add(k);return true});
+}
+function renderMoveTargets(){
+  if(!moveTargetsLayer)return;
+  moveTargetsLayer.innerHTML='';
+  if(!G||G.over||G.animating||!['dir','post','jump'].includes(G.phase))return;
+  const p=G.phase==='jump'?jumpPiece():seatPiece();
+  if(!p||p.status!=='free')return;
+  const targets=moveDestinationOptions(p);
+  for(const target of targets){
+    const pt=pointForLoc(target.loc), color=p.seat.isGhost?META.red.main:META[p.color].main;
+    const g=el('g',{class:'move-target','data-target-kind':target.kind,'data-target':target.target!==undefined?target.target:'','data-dir':target.dir||'','data-dice':target.dice||'','data-plus':target.plusUsed?'1':'0','aria-label':target.label},moveTargetsLayer);
+    el('circle',{class:'halo',cx:pt.x,cy:pt.y,r:31,fill:'rgba(255,255,255,.62)',stroke:color,'stroke-width':5},g);
+    el('circle',{cx:pt.x,cy:pt.y,r:24,fill:'rgba(255,255,255,.2)',stroke:'#fff','stroke-width':3,'stroke-dasharray':'7 5'},g);
+    const badge=el('circle',{cx:pt.x+27,cy:pt.y-27,r:16,fill:color,stroke:'#fff','stroke-width':3},g);
+    badge.setAttribute('filter','drop-shadow(0 2px 3px rgba(0,0,0,.35))');
+    const tag=el('text',{x:pt.x+27,y:pt.y-21,'font-size':16,'text-anchor':'middle',fill:'#fff','font-weight':900},g);
+    tag.textContent=target.tag;
+    const label=el('text',{x:pt.x,y:pt.y+43,'font-size':15,'text-anchor':'middle',fill:'#1d2733','font-weight':900},g);
+    label.textContent=target.label||target.tag;
+    g.addEventListener('click',()=>{
+      if(!G||G.animating||!['dir','post','jump'].includes(G.phase))return;
+      if(target.kind==='noJump')declineLongJump();
+      else if(target.kind==='jump')confirmLongJump(target.target);
+      else if(target.kind==='lane')enterLane();
+      else{
+        if(p.seat.isGhost&&G.phase==='dir'){
+          G.dice=target.dice; G.plusUsed=!!target.plusUsed; setDice(G.dice);
+        }
+        if(target.extra)chooseExtraDir(target.dir);
+        else chooseDir(target.dir);
+      }
+    });
+  }
+}
+/* ================= 落点结算 ================= */
+function releaseCarriedByStun(){
+  const gp=ghostPiece();
+  if(!gp)return [];
+  const names=[];
+  for(const p of pieces){
+    if(p.seat.isGhost||p.status!=='carried')continue;
+    p.status='free'; p.carryT=0; p.holdTimer=false; p.immune=2; p.loc={...gp.loc};
+    names.push(p.seat.name);
+  }
+  if(names.length){SFX.rescue(); renderPieces();}
+  return names;
+}
+function stunGhost(turns=1,reason='鬼被眩晕'){
+  if(!G||G.over)return [];
+  const gp=ghostPiece();
+  if(!gp)return [];
+  gp.stunTurns=Math.max(gp.stunTurns||0,turns);
+  const rescued=releaseCarriedByStun();
+  if(rescued.length)log('💫 '+reason+'，鬼眩晕 '+turns+' 回合；'+rescued.join('、')+' 被解救！');
+  else log('💫 '+reason+'，鬼眩晕 '+turns+' 回合。');
+  showStatusAlert('💫','鬼被眩晕 '+turns+' 回合'+(rescued.length?'，'+rescued.join('、')+'已获救':''),'stun');
+  if(G.turn===0&&!['wait','rolling','moving','over'].includes(G.phase)){
+    G.pendingExtra=0; G.pendingJump=null; G.pendingHook=null; G.pendingMindWarning=null;
+    G.phase='wait';
+    renderActions(); updateUI();
+    setTimeout(()=>{if(G&&!G.over)endTurn()},900);
+  }else{
+    renderPieces(); updateObjective(); updateUI();
+  }
+  return rescued;
+}
+function doCaptureBy(mover,captureLoc=mover.loc){
+  const gp=ghostPiece();
+  let captured=0;
+  if(mover.seat.isGhost){
+    if(ghostHasCarried())return 0;
+    syncCarriedToGhost();
+    for(const p of pieces){
+      if(p.seat.isGhost||p.status!=='free')continue;
+      if(!locEq(p.loc,captureLoc))continue;
+      if(p.immune>0){log('✨ '+p.seat.name+' 处于免疫状态，抓捕失败！');continue}
+      if(p.shield>0){p.shield=0;log('🛡 '+p.seat.name+' 的护盾抵挡了一次抓捕！');continue}
+      p.status='carried'; p.carryT=3; p.holdTimer=true; p.loc={...mover.loc};
+      captured++;
+      log('👻 '+p.seat.name+' 被鬼捆绑，开始随鬼移动；须在 3 个鬼回合内送到其起始点。');
+      showStatusAlert('👻',p.seat.name+'被鬼抓住，进入捆绑状态！','capture');
+      break;
+    }
+    if(captured){SFX.capture(); renderPieces();}
+  }else if(mover.status==='free'&&gp&&locEq(mover.loc,gp.loc)){
+    stunGhost(1,mover.seat.name+' 踩中鬼');
+  }
+  return captured;
+}
+function doDelivery(mover){
+  if(!mover.seat.isGhost||mover.loc.type!=='ring')return 0;
+  let delivered=0;
+  for(const p of pieces){
+    if(p.status!=='carried')continue;
+    if(mover.loc.abs!==META[p.color].start)continue;
+    p.status='prison'; p.prisonT=2; p.holdTimer=true; p.carryT=0;
+    p.loc={type:'ring',abs:META[p.color].start};
+    delivered++;
+    log('\u2693 '+p.seat.name+' 被放在起始点，进入 2 个鬼回合倒计时；同伴踩到此格可解救。');
+    showStatusAlert('⛓️',p.seat.name+'被押送到起始点，进入倒计时！','danger');
+  }
+  if(delivered)renderPieces();
+  return delivered;
+}
+function doRescue(mover){
+  if(mover.seat.isGhost||mover.loc.type!=='ring')return;
+  const gp=ghostPiece();
+  let rescued=0;
+  for(const p of pieces){
+    if(p.seat.isGhost||p===mover)continue;
+    if(p.status!=='carried'&&p.status!=='prison')continue;
+    if(p.status==='carried'&&gp.loc.type!=='ring')continue;
+    const wasCarried=p.status==='carried';
+    const targetAbs=wasCarried?gp.loc.abs:META[p.color].start;
+    if(ringDist(mover.loc.abs,targetAbs)>0)continue;
+    p.status='free'; p.prisonT=0; p.carryT=0; p.holdTimer=false; p.immune=2; p.loc={type:'ring',abs:mover.loc.abs};
+    rescued++;
+    log(wasCarried
+      ? '\u26D3 '+mover.seat.name+' 解救了被捆绑的 '+p.seat.name+'！'
+      : '\uD83E\uDD1D '+mover.seat.name+' 在起始点营救了 '+p.seat.name+'！');
+  }
+  if(rescued){
+    SFX.rescue(); renderPieces();
+    showStatusAlert('✨',rescued+' 名人类成功获救！','rescue');
+  }
+}
+function grantDecode(mover){
+  if(!mover.loc||mover.loc.type!=='runway')return false;
+  const lane=mover.loc.color;
+  if(!G.decodedLanes)G.decodedLanes=[];
+  if(G.decodedLanes.includes(lane))return false;
+  G.decodedLanes.push(lane);
+  G.decode=G.decodedLanes.length;
+  SFX.decode();
+  log('🔐 '+mover.seat.name+' 完成'+LANE_LABEL[lane]+'破译！（'+G.decode+'/'+DECODE_NEED+'）');
+  if(G.decode>=DECODE_NEED&&!G.unlocked){
+    G.unlocked=true;
+    SFX.unlock();
+    log('🔓 四条专属道密码全部破译完成！红方☠格开启为撤离门！');
+  }
+  updateObjective();
+  return true;
+}
+function doEscape(mover){
+  if(mover.seat.isGhost||!G.unlocked)return false;
+  if(mover.status!=='free'||mover.loc.type!=='ring'||mover.loc.abs!==EXIT_ABS)return false;
+  mover.status='escaped';
+  SFX.win();
+  log('\uD83C\uDFC3 '+mover.seat.name+' 从撤离门成功撤离！（'+escapedCount()+'/'+ESCAPE_NEED+'）');
+  showStatusAlert('🏃',mover.seat.name+'成功撤离！','success');
+  return true;
+}
+function checkEnd(){
+  if(G.over)return true;
+  if(aliveHumans().length===0){
+    G.over=true; G.phase='over'; renderActions(); updateUI();
+    SFX.lose();
+    $('#endEmoji').textContent='\uD83D\uDC7D';
+    $('#endText').textContent='鬼阵营获胜！';
+    $('#endSub').textContent='所有人类都被淘汰了…';
+    setTimeout(()=>endModal.classList.remove('hidden'),700);
+    return true;
+  }
+  if(escapedCount()>=ESCAPE_NEED||(escapedCount()>=1&&aliveHumans().length===0)){
+    G.over=true; G.phase='over'; renderActions(); updateUI();
+    SFX.win();
+    $('#endEmoji').textContent='\uD83C\uDFC6';
+    $('#endText').textContent='人类阵营获胜！';
+    $('#endSub').textContent=escapedCount()+' 名人类成功撤离！';
+    setTimeout(()=>endModal.classList.remove('hidden'),700);
+    return true;
+  }
+  return false;
+}
+/* ================= 回合引擎 ================= */
+function beginTurn(){
+  if(!G||G.over)return;
+  const seat=SEATS[G.turn], p=seatPiece();
+  for(const sk of seat.skills)if(sk.cdLeft>0)sk.cdLeft--;
+  G.phase='roll'; G.declineEntry=false; G.pendingExtra=0; G.pendingJump=null; G.pendingHook=null; G.pendingMindWarning=null;
+  G.dice=0; G.baseDice=0; G.plusUsed=false; G.dollPlacedThisTurn=false; G.dollSwappedThisTurn=false;
+  G.attackUsed=false; G.slowApplied=false; setDice(0);
+  if(!seat.isGhost&&p.status==='free'){
+    const flashlight=passiveOf(p,'flashlightStun');
+    if(flashlight){
+      const inRange=pieceDistance(p,ghostPiece())<=(flashlight.range||6);
+      if(inRange){
+        p.flashTurns=(p.flashTurns||0)+1;
+        if(p.flashTurns>=(flashlight.turns||2)){
+          p.flashTurns=0;
+          SFX.jump();
+          stunGhost(1,'🔦 光谱的「晕眩手电」连续蓄能完成');
+        }else{
+          log('🔦 光谱的「晕眩手电」已蓄能 '+p.flashTurns+'/2。');
+        }
+      }else{
+        p.flashTurns=0;
+      }
+    }
+  }else if(!seat.isGhost){
+    p.flashTurns=0;
+  }
+  if(seat.isGhost&&p.stunTurns>0){
+    p.stunTurns--;
+    G.phase='wait';
+    log('💫 鬼处于眩晕，跳过本回合。');
+    renderActions(); updateUI();
+    setTimeout(()=>{if(G&&!G.over)endTurn()},1100);
+    return;
+  }
+  if(!seat.isGhost&&p.status!=='free'){
+    G.phase='wait';
+    p.holdTimer=false;
+    log(seat.name+'（'+(p.status==='carried'?'被捆绑中':'被放在起始点')+'）无法行动。');
+    renderActions(); updateUI();
+    setTimeout(()=>{if(G&&!G.over)endTurn()},1100);
+    return;
+  }
+  renderActions(); updateUI();
+}
+async function doRoll(){
+  if(!G||G.over||G.animating||G.phase!=='roll')return;
+  G.phase='rolling'; G.animating=true; renderActions(); updateUI();
+  SFX.dice();
+  const raw=1+Math.floor(Math.random()*6);
+  const seat=SEATS[G.turn], p=seatPiece();
+  let v=raw;
+  if(!seat.isGhost&&p.slowTurns>0&&!hasPassive(p,'slowImmune')){
+    v=Math.max(1,raw-1);
+    G.slowApplied=true;
+  }
+  await diceAnim(v);
+  if(!G||G.over)return;
+  G.dice=v; G.baseDice=v; G.plusUsed=false; G.animating=false;
+  const slowText=G.slowApplied?'（受减速影响，原掷出 '+raw+' 点，移动 -1）':'';
+  if(seat.isGhost){ G.phase='dir'; log('鬼掷出 '+v+' 点：棋盘同时显示原 '+v+' 步与阵营技「阴阳+1」后的 '+(v+1)+' 步落点。'); }
+  else{ G.phase='dir'; log(seat.name+' 掷出 '+v+' 点'+slowText+'，本回合移动 '+v+' 步，点击棋盘落点。'); }
+  renderActions(); updateUI();
+}
+function choosePlus(use){
+  if(!G||G.phase!=='plus')return;
+  G.dice=G.baseDice;
+  if(use){
+    G.dice=G.baseDice+1; G.plusUsed=true; SFX.jump();
+    log('鬼发动「阴阳+1」：原 '+G.baseDice+' 点，本回合移动 '+G.dice+' 步。');
+  }else{
+    G.plusUsed=false;
+    log('鬼保持 '+G.dice+' 点，本回合移动 '+G.dice+' 步。');
+  }
+  setDice(G.dice);
+  G.phase='dir'; renderActions(); updateUI();
+}
+function undoPlus(){
+  if(!G||G.phase!=='dir'||!G.plusUsed||G.pendingExtra!==0||G.animating)return;
+  G.dice=G.baseDice; G.plusUsed=false; setDice(G.dice);
+  G.phase='plus';
+  log('已撤回「阴阳+1」，返回选择：保持 '+G.baseDice+' 点，或加为 '+(G.baseDice+1)+' 点。');
+  renderActions(); updateUI();
+}
+async function chooseDir(dir){
+  if(!G||G.phase!=='dir'||G.animating)return;
+  G.phase='moving'; G.animating=true; G.declineEntry=false; renderActions(); updateUI();
+  const p=seatPiece();
+  await moveAlong(p,dir,G.dice,true);
+  if(!G||G.over||G.phase==='jump')return;
+  G.animating=false;
+  afterMove(p,false);
+}
+async function moveAlong(p,dir,d,allowJump){
+  const steps=buildSteps(p.loc,dir,d);
+  p.el.classList.add('moving');
+  let i=0;
+  for(const st of steps){
+    p.loc={...st}; renderPieces(); SFX.step(i++);
+    await sleep(170);
+    if(!G||G.over){p.el.classList.remove('moving');return}
+  }
+  if(p.seat.isGhost){
+    /* 掷骰移动结束即结算捆绑，随后才进入同色格跳跃选择。 */
+    doDelivery(p);
+    doCaptureBy(p);
+    doDelivery(p);
+  }
+  if(allowJump){
+    const js=jumpSteps(p.loc,dir,p.color);
+    if(js){
+      p.el.classList.remove('moving');
+      G.pendingJump={...js,pieceIndex:pieces.indexOf(p),jumpAfter:'move'};
+      G.phase='jump';
+      G.animating=false;
+      log('\u2B50 '+p.seat.name+' 停在同色格，可选择跳跃方向。');
+      renderActions(); updateUI();
+      return;
+    }
+  }
+  p.el.classList.remove('moving');
+}
+async function confirmLongJump(target){
+  if(!G||G.phase!=='jump'||!G.pendingJump||target===undefined)return;
+  const p=jumpPiece();
+  if(!p)return;
+  const js=G.pendingJump;
+  G.pendingJump=null;
+  G.phase='moving'; G.animating=true; renderActions(); updateUI();
+  p.el.classList.add('moving');
+  SFX.jump();
+  log('\u2B50 '+p.seat.name+' 选择跳跃到 '+target+' 号格。');
+  await sleep(220);
+  p.loc={type:'ring',abs:target};
+  renderPieces(); SFX.step(0);
+  if(js.long&&target===js.longTarget&&p.seat.isGhost){
+    const pathCell=LONG_JUMP_CAPTURE_CELLS[js.longFrom];
+    if(pathCell){
+      const captured=doCaptureBy(p,pathCell);
+      if(captured)log('\uD83D\uDC7B 鬼飞越专属通道时直接抓住路径格上的人类！');
+    }
+  }
+  await sleep(420);
+  p.el.classList.remove('moving');
+  if(!G||G.over)return;
+  if(js.jumpAfter==='skill'){
+    clearDollsAt(p.loc);
+    doCaptureBy(p);
+    if(!G||G.over)return;
+    G.animating=false;
+    if(G.phase!=='wait')G.phase=js.jumpReturnPhase||'post';
+    renderActions(); updateUI();
+    return;
+  }
+  G.animating=false;
+  afterMove(p,false);
+}
+function declineLongJump(){
+  if(!G||G.phase!=='jump')return;
+  const js=G.pendingJump;
+  G.pendingJump=null;
+  G.animating=false;
+  G.phase=js&&js.jumpAfter==='skill'?(js.jumpReturnPhase||'post'):'post';
+  log('选择不跳跃。');
+  renderActions(); updateUI();
+}
+function afterMove(p,isExtra){
+  clearDollsAt(p.loc);
+  doDelivery(p);
+  doCaptureBy(p);
+  doDelivery(p);
+  doRescue(p);
+  if(!p.seat.isGhost&&canDecodeAt(p)&&G.decode<DECODE_NEED){
+    if(hasPassive(p,'decodeExpert')&&p.loc.idx===LANE_LEN-1)log('🔎 盲女的「解密专家」让她在密码点前一格完成破译。');
+    grantDecode(p);
+  }
+  const escaped=doEscape(p);
+  if(escaped){
+    updateObjective();
+    if(checkEnd())return;
+    endTurn(); return;
+  }
+  if(checkEnd())return;
+  updateObjective();
+  if(!p.seat.isGhost&&p.status!=='free'){
+    endTurn(); return;
+  }
+  G.phase='post';
+  renderActions(); updateUI();
+}
+function endTurn(){
+  if(!G||G.over)return;
+  const seat=SEATS[G.turn], p=seatPiece();
+  if(!seat.isGhost&&p.slowTurns>0&&!hasPassive(p,'slowImmune')){
+    p.slowTurns--;
+    if(p.slowTurns>0)log('🐌 '+p.seat.name+' 的减速还剩 '+p.slowTurns+' 个自身回合。');
+  }
+  G.pendingHook=null;
+  if(seat.isGhost)ghostTimers();
+  if(checkEnd())return;
+  G.turn=(G.turn+1)%SEATS.length;
+  if(G.turn===0){G.round++; log('—— 第 '+G.round+' 轮 ——')}
+  beginTurn();
+}
+function ghostTimers(){
+  const gp=ghostPiece();
+  for(const p of pieces){
+    if(p.seat.isGhost)continue;
+    if(p.status==='carried'){
+      if(p.holdTimer){p.holdTimer=false}
+      else{
+        p.carryT--;
+        if(p.carryT<=0){
+          p.status='free'; p.carryT=0; p.holdTimer=false; p.immune=2; p.loc={...gp.loc};
+          log('\u2220 押送超时！'+p.seat.name+' 在鬼身边挣脱（获得免疫）。');
+          showStatusAlert('✨',p.seat.name+'挣脱捆绑，获得免疫！','rescue');
+          SFX.rescue();
+        }
+      }
+    }else if(p.status==='prison'){
+      if(p.holdTimer){p.holdTimer=false}
+      else{
+        p.prisonT--;
+        if(p.prisonT<=0){
+          p.status='out'; p.loc=null;
+          SFX.kill();
+          log('\u2620 '+p.seat.name+' 两个鬼回合内无人解救，被淘汰！');
+          showStatusAlert('☠️',p.seat.name+'未能获救，已被淘汰！','danger');
+        }else{
+          log('\u23F3 '+p.seat.name+' 还剩 '+p.prisonT+' 个鬼回合，同伴踩到起始点仍可解救。');
+        }
+      }
+    }
+  }
+  pieces.forEach(p=>{if(!p.seat.isGhost&&p.immune>0)p.immune--});
+}
+
+/* ================= 专属道进入 ================= */
+function canEnterLane(mover){
+  if(!G||G.over||mover.seat.isGhost||mover.status!=='free')return false;
+  if(mover.loc.type!=='ring')return false;
+  const lane=laneOfEntry(mover.loc.abs);
+  if(!lane)return false;
+  if(G.decode>=DECODE_NEED||G.declineEntry)return false;
+  return true;
+}
+async function enterLane(){
+  if(!G||G.over||G.animating||(G.phase!=='post'&&G.phase!=='dir'))return;
+  const p=seatPiece();
+  if(!canEnterLane(p))return;
+  G.phase='moving'; G.animating=true; renderActions();
+  const lane=laneOfEntry(p.loc.abs);
+  p.el.classList.add('moving');
+  p.loc={type:'runway',color:lane,idx:1};
+  renderPieces(); SFX.step(0);
+  await sleep(220);
+  p.el.classList.remove('moving');
+  if(!G||G.over)return;
+  G.animating=false;
+  afterMove(p,false);
+}
+
+/* ================= 技能 ================= */
+function skillSeat(skill){return SEATS.find(seat=>seat.skills&&seat.skills.includes(skill))||null}
+function skillPiece(skill){const seat=skillSeat(skill);return seat?pieces[SEATS.indexOf(seat)]:null}
+function turnKey(seatIndex){return G.round+':'+(seatIndex===undefined?G.turn:seatIndex)}
+function markSkillUsedThisTurn(skill){skill.usedTurn=turnKey(skillSeat(skill)?SEATS.indexOf(skillSeat(skill)):G.turn)}
+function skillUsableNow(skill,owner){
+  if(!G||G.over||!skill||skill.cdLeft>0||G.animating)return false;
+  owner=owner||skillSeat(skill);
+  if(!owner)return false;
+  const p=pieces[SEATS.indexOf(owner)], type=skill.type, active=owner===SEATS[G.turn];
+  if(!p)return false;
+  if(type==='stunShot'){
+    return !owner.isGhost&&p.status!=='out'&&p.status!=='escaped'&&!skill.usedGame&&!['wait','rolling','moving','over'].includes(G.phase);
+  }
+  if(type==='mindWarning'){
+    if(p.status!=='free'||skill.usedRound===G.round)return false;
+    if(pieceDistance(p,ghostPiece())>(skill.range||6))return false;
+    if(active)return G.phase==='roll'||G.phase==='post';
+    return SEATS[G.turn].isGhost&&['roll','plus','dir','post'].includes(G.phase);
+  }
+  if(type==='hook'){
+    if(!active||!owner.isGhost||p.status!=='free'||skill.usedTurn===turnKey()||ghostHasCarried())return false;
+    if(G.phase!=='roll'&&G.phase!=='post')return false;
+    return hookTargets().length>0;
+  }
+  if(type==='extraMove')return active&&G.phase==='post';
+  return false;
+}
+function usableSkills(){
+  const out=[];
+  for(const seat of SEATS)for(const skill of (seat.skills||[]))if(skillUsableNow(skill,seat))out.push({skill,owner:seat});
+  return out;
+}
+function mindWarningMove(p){
+  const gp=ghostPiece();
+  if(!gp)return null;
+  const options=mindWarningDirOptions(p);
+  if(!options.length)return null;
+  const current=pieceDistance(p,gp);
+  options.sort((a,b)=>pieceDistance({loc:b.loc},{loc:gp.loc})-pieceDistance({loc:a.loc},{loc:gp.loc}));
+  const best=options[0];
+  if(pieceDistance({loc:best.loc},{loc:gp.loc})<current)return null;
+  return best;
+}
+function mindWarningDirOptions(p){
+  return [1,-1].map(dir=>({dir,loc:advance(p.loc,dir)})).filter(o=>!locEq(o.loc,p.loc));
+}
+function performMindWarningMove(p,dir,returnPhase){
+  if(!G||!p||p.status!=='free')return false;
+  const loc=advance(p.loc,dir);
+  if(locEq(loc,p.loc))return false;
+  p.loc={...loc};
+  clearDollsAt(p.loc);
+  renderPieces();
+  SFX.step(1);
+  log('🔮 '+p.seat.name+'·'+p.seat.charName+' 发动「心灵预警」，移动 1 格。');
+  const js=jumpSteps(p.loc,dir,p.color);
+  if(js){
+    G.pendingJump={...js,pieceIndex:pieces.indexOf(p),jumpAfter:'skill',jumpReturnPhase:returnPhase||'post'};
+    G.phase='jump';
+    log('\u2B50 '+p.seat.name+' 因「心灵预警」停在同色格，可选择跳跃方向。');
+  }else{
+    G.phase=returnPhase||'post';
+  }
+  renderActions(); updateUI();
+  return true;
+}
+function useSkill(skill){
+  const owner=skillSeat(skill);
+  if(!G||!owner||!skillUsableNow(skill,owner))return;
+  const p=pieces[SEATS.indexOf(owner)], type=skill.type;
+  if(type==='stunShot'){
+    skill.usedGame=true;
+    SFX.jump();
+    stunGhost(1,'💥 '+owner.name+'·'+owner.charName+' 发动「'+skill.name+'」');
+    renderActions(); updateUI();
+    return;
+  }
+  if(type==='mindWarning'){
+    const gp=ghostPiece();
+    if(gp&&pieceDistance(p,gp)===0){
+      skill.usedRound=G.round;
+      G.pendingMindWarning={pieceIndex:pieces.indexOf(p),returnPhase:G.phase};
+      G.phase='mindWarningDir';
+      log('🔮 '+owner.name+'·'+owner.charName+' 与鬼同格，请选择「心灵预警」的移动方向。');
+      renderActions(); updateUI();
+      return;
+    }
+    const move=mindWarningMove(p);
+    if(!move)return;
+    skill.usedRound=G.round;
+    performMindWarningMove(p,move.dir,G.phase);
+    return;
+  }
+  if(type==='hook'){
+    G.hookReturnPhase=G.phase;
+    G.pendingHook=hookTargets();
+    if(!G.pendingHook.length)return;
+    G.phase='hookDir';
+    log('🪝 鹿头发动「钩爪」，选择抓取方向。');
+    renderActions(); updateUI();
+    return;
+  }
+  if(type==='extraMove'){
+    markSkillUsedThisTurn(skill); skill.cdLeft=skill.cd||0;
+    const extra=skill.extra||1;
+    G.phase='dir'; G.pendingExtra=extra;
+    log('⚡ '+owner.name+'·'+owner.charName+' 发动「'+skill.name+'」，选择方向额外移动 '+extra+' 格！');
+    renderActions(); updateUI();
+  }
+}
+function chooseMindWarningDir(dir){
+  if(!G||G.phase!=='mindWarningDir'||!G.pendingMindWarning)return;
+  const pending=G.pendingMindWarning;
+  G.pendingMindWarning=null;
+  const p=pieces[pending.pieceIndex];
+  if(!p||p.status!=='free'){
+    G.phase=pending.returnPhase||'post';
+    renderActions(); updateUI();
+    return;
+  }
+  performMindWarningMove(p,dir,pending.returnPhase);
+}
+async function chooseExtraDir(dir){
+  if(!G||G.phase!=='dir'||G.pendingExtra<=0||G.animating)return;
+  const extra=G.pendingExtra;
+  G.pendingExtra=0;
+  G.phase='moving'; G.animating=true; renderActions(); updateUI();
+  const p=seatPiece();
+  await moveAlong(p,dir,extra,false);
+  if(!G||G.over||G.phase==='jump')return;
+  G.animating=false;
+  afterMove(p,true);
+}
+function hookTargets(){
+  if(!G||!ghostPiece()||ghostPiece().loc.type!=='ring'||ghostHasCarried())return [];
+  const gp=ghostPiece(), out=[];
+  function addTarget(target,label,kind,extra){
+    if(!target||target.seat.isGhost||target.status!=='free'||target.immune>0)return;
+    if(out.some(x=>x.targetIndex===pieces.indexOf(target)))return;
+    out.push({targetIndex:pieces.indexOf(target),label,kind,...extra});
+  }
+  for(const dir of [-1,1]){
+    let loc={...gp.loc};
+    for(let step=1;step<=3;step++){
+      loc=advance(loc,dir);
+      const target=pieces.find(t=>!t.seat.isGhost&&t.status==='free'&&locEq(t.loc,loc));
+      if(target&&target.immune<=0){
+        addTarget(target,(dir===1?'↻ 顺时针':'↺ 逆时针')+' '+step+' 格 · '+(target.seat.name),'ring',{dir,step});
+        break;
+      }
+    }
+  }
+  const lane=laneOfEntry(gp.loc.abs);
+  if(lane){
+    let best=null;
+    for(const t of pieces){
+      if(t.seat.isGhost||t.status!=='free'||t.immune>0)continue;
+      if(t.loc.type!=='runway'||t.loc.color!==lane||t.loc.idx<1||t.loc.idx>3)continue;
+      if(!best||t.loc.idx<best.loc.idx)best=t;
+    }
+    if(best)addTarget(best,'🚪 拉出入口通道 '+best.loc.idx+' 格 · '+best.seat.name,'lane',{lane,step:best.loc.idx});
+  }
+  return out;
+}
+function chooseHookTarget(targetIndex){
+  if(!G||G.phase!=='hookDir'||!Array.isArray(G.pendingHook))return;
+  const choice=G.pendingHook.find(x=>x.targetIndex===targetIndex);
+  const target=pieces[targetIndex], gp=ghostPiece();
+  const skill=SEATS[G.turn].skills.find(sk=>sk.type==='hook');
+  if(!choice||!target||!skill||target.status!=='free'||gp.status!=='free')return;
+  target.status='carried'; target.carryT=3; target.holdTimer=true; target.loc={...gp.loc}; target.prisonT=0;
+  skill.cdLeft=skill.cd||3; markSkillUsedThisTurn(skill);
+  G.pendingHook=null; G.phase=G.hookReturnPhase||'post';
+  SFX.capture(); renderPieces();
+  log('🪝 鹿头用「钩爪」抓回 '+target.seat.name+' 并捆绑，冷却 '+skill.cdLeft+' 回合。');
+  showStatusAlert('🪝',target.seat.name+'被钩爪抓住，进入捆绑状态！','capture');
+  renderActions(); updateUI();
+}
+function cancelHook(){
+  if(!G||G.phase!=='hookDir')return;
+  G.pendingHook=null; G.phase=G.hookReturnPhase||'post';
+  log('已取消钩爪。');
+  renderActions(); updateUI();
+}
+function adjacentHumanTargets(){
+  const gp=ghostPiece();
+  if(!gp||gp.status!=='free')return [];
+  return pieces.filter(p=>!p.seat.isGhost&&p.status==='free'&&pieceDistance(gp,p)===1&&!hasPassive(p,'slowImmune'));
+}
+function canUseAdjacentAttack(){
+  return !!(G&&SEATS[G.turn]&&SEATS[G.turn].isGhost&&seatPiece().status==='free'&&hasPassive(seatPiece(),'adjacentAttack')&&!G.attackUsed&&adjacentHumanTargets().length&&['roll','plus','dir','post'].includes(G.phase));
+}
+function useAdjacentAttack(targetIndex){
+  if(!canUseAdjacentAttack())return;
+  const target=pieces[targetIndex];
+  if(!target||pieceDistance(seatPiece(),target)!==1)return;
+  G.attackUsed=true;
+  if(hasPassive(target,'slowImmune')){
+    log('🛡 '+target.seat.name+' 的「身强体壮」免疫了减速。');
+  }else{
+    target.slowTurns=2;
+    SFX.capture();
+    log('🎯 '+seatPiece().seat.charName+' 攻击相邻的 '+target.seat.name+'，减速 2 个自身回合（移动点数 -1）。');
+    showStatusAlert('🐌',target.seat.name+'被减速 2 个自身回合！','danger');
+  }
+  renderActions(); updateUI();
+}
+function canPlaceDoll(){
+  if(!G||!SEATS[G.turn]||!SEATS[G.turn].isGhost||seatPiece().status!=='free')return false;
+  if(!SEATS[G.turn].skills.some(sk=>sk.type==='doll'))return false;
+  if(!['roll','plus','dir','post'].includes(G.phase)||G.dollPlacedThisTurn)return false;
+  return G.dollPlacedRound<0||G.round-G.dollPlacedRound>=2;
+}
+function placeDoll(){
+  if(!canPlaceDoll())return;
+  const gp=ghostPiece();
+  G.dolls.push({id:Date.now()+'_'+G.dolls.length,loc:{...gp.loc},placedRound:G.round});
+  if(G.dolls.length>2)G.dolls.shift();
+  G.dollPlacedThisTurn=true; G.dollPlacedRound=G.round;
+  renderDolls(); SFX.jump();
+  log('🧸 厂长在当前位置放置布娃娃（场上 '+G.dolls.length+' 个）。');
+  renderActions(); updateUI();
+}
+function swapWithDoll(index){
+  if(!G||!SEATS[G.turn]||!SEATS[G.turn].isGhost||G.dollSwappedThisTurn||!SEATS[G.turn].skills.some(sk=>sk.type==='doll'))return;
+  if(!['roll','plus','dir','post'].includes(G.phase))return;
+  const gp=ghostPiece(), doll=G.dolls[index];
+  if(!gp||!doll)return;
+  const old={...gp.loc};
+  gp.loc={...doll.loc}; doll.loc=old;
+  G.dollSwappedThisTurn=true;
+  syncCarriedToGhost(); renderPieces(); SFX.jump();
+  log('🧸 厂长与布娃娃交换了位置。');
+  doDelivery(gp);
+  doCaptureBy(gp);
+  if(checkEnd())return;
+  renderActions(); updateUI();
+}
+
+/* ================= UI/* ================= UI ================= */
+function updateUI(){
+  if(!G)return;
+  const seat=SEATS[G.turn];
+  turnDot.style.background=META[seat.color].main;
+  turnText.textContent=G.over?'对局结束':(seat.isGhost?'👻 ':'')+seat.name+(seat.charName?' · '+seat.charName:'')+' 回合 · 第 '+G.round+' 轮';
+  rollBtn.disabled=!(G.phase==='roll'&&!G.animating&&!G.over);
+  playersEl.innerHTML='';
+  for(let i=0;i<SEATS.length;i++){
+    const sd=SEATS[i], p=pieces[i];
+    const card=document.createElement('div');
+    card.className='pcard'+(i===G.turn&&!G.over?' active':'')+((p.status==='out')?' dead':'');
+    let st;
+    if(p.status==='free')st='<span class="st">自由</span>';
+    else if(p.status==='carried')st='<span class="st">被捆绑 · 随鬼移动 ⏱'+p.carryT+'</span>';
+    else if(p.status==='prison')st='<span class="st">已放起始点 ⏱'+p.prisonT+'</span>';
+    else if(p.status==='escaped')st='<span class="st" style="color:#2c7a2a">已撤离 ✅</span>';
+    else st='<span class="st">已淘汰 ⛔</span>';
+    const extras=[];
+    if(p.stunTurns>0)extras.push('💫眩晕'+p.stunTurns);
+    if(p.slowTurns>0)extras.push('🐌减速'+p.slowTurns);
+    if(p.flashTurns>0)extras.push('🔦预警'+p.flashTurns+'/2');
+    if(p.shield>0)extras.push('🛡护盾');
+    if(p.immune>0)extras.push('✨免疫'+p.immune);
+    const activeText=sd.skills.map(sk=>sk.name+(sk.cdLeft>0?'（冷却 '+sk.cdLeft+'）':(sk.usedGame?'（已用）':'（就绪）'))).join(' / ')||'无';
+    const passiveText=sd.passives.length?' ｜ 被动：'+sd.passives.map(pv=>pv.name).join('、'):'';
+    card.innerHTML='<span class="dot" style="background:'+META[sd.color].main+'"></span><b>'+(sd.isGhost?'👻 鬼':sd.name)+' · '+sd.charName+'</b>'
+      +'<br>'+st+(extras.length?' <span style="font-size:11px">'+extras.join(' ')+'</span>':'')
+      +'<br><span style="font-size:11px;color:#7a8a99">主动：'+activeText+passiveText+'</span>';
+    playersEl.appendChild(card);
+  }
+}
+function mkBtn(label,cls,fn,disabled){
+  const b=document.createElement('button');
+  b.textContent=label;
+  if(cls)b.className=cls;
+  b.disabled=!!disabled;
+  b.addEventListener('click',fn);
+  return b;
+}
+function addInfo(text){
+  const n=document.createElement('div');
+  n.className='action-info';
+  n.textContent=text;
+  actionsEl.appendChild(n);
+}
+function addSkillButtons(){
+  for(const item of usableSkills()){
+    const prefix=item.owner===SEATS[G.turn]?'':item.owner.name+' · ';
+    actionsEl.appendChild(mkBtn('⚡ '+prefix+item.skill.name,'',()=>useSkill(item.skill)));
+  }
+}
+function addGhostUtilityButtons(){
+  const seat=SEATS[G.turn], p=seatPiece();
+  if(!seat.isGhost||p.status!=='free')return;
+  if(seat.skills.some(sk=>sk.type==='doll')){
+    if(canPlaceDoll())actionsEl.appendChild(mkBtn('🧸 放置布娃娃','',placeDoll));
+    if(!G.dollSwappedThisTurn){
+      G.dolls.forEach((d,index)=>actionsEl.appendChild(mkBtn('🔁 与布娃娃 '+(index+1)+' 交换','',()=>swapWithDoll(index))));
+    }
+  }
+  if(canUseAdjacentAttack()){
+    adjacentHumanTargets().forEach(t=>actionsEl.appendChild(mkBtn('🎯 攻击 '+t.seat.name+'（减速）','',()=>useAdjacentAttack(pieces.indexOf(t)))));
+  }
+}
+function renderActions(){
+  if(!G){actionsEl.innerHTML='';return}
+  actionsEl.innerHTML='';
+  const seat=SEATS[G.turn], p=seatPiece();
+  if(G.over)return;
+  if(G.phase==='roll'){
+    addSkillButtons();
+    addGhostUtilityButtons();
+    if(!actionsEl.children.length)addInfo('掷骰子开始本回合。');
+  }else if(G.phase==='plus'){
+    actionsEl.appendChild(mkBtn('🎲 点数+1（走 '+(G.baseDice+1)+' 步）','primary',()=>choosePlus(true)));
+    actionsEl.appendChild(mkBtn('保持 '+G.baseDice+' 点（走 '+G.baseDice+' 步）','',()=>choosePlus(false)));
+    addSkillButtons();
+    addGhostUtilityButtons();
+  }else if(G.phase==='hookDir'){
+    addSkillButtons();
+    addInfo('🪝 选择钩爪方向与目标');
+    for(const h of G.pendingHook)actionsEl.appendChild(mkBtn(h.label,'primary',()=>chooseHookTarget(h.targetIndex)));
+    actionsEl.appendChild(mkBtn('取消钩爪','full',cancelHook));
+  }else if(G.phase==='mindWarningDir'){
+    const warning=G.pendingMindWarning;
+    const warningPiece=warning?pieces[warning.pieceIndex]:null;
+    addInfo('🔮 盲女与鬼同格，选择「心灵预警」的移动方向。');
+    if(warningPiece){
+      for(const option of dirOptions(warningPiece))actionsEl.appendChild(mkBtn('🔮 '+option.label,'primary',()=>chooseMindWarningDir(option.dir)));
+    }
+  }else if(G.phase==='jump'){
+    addInfo('⭐ 点击棋盘上的长跳或最近同色格；点击自己表示不跳跃。');
+    addSkillButtons();
+  }else if(G.phase==='dir'){
+    if(G.pendingExtra>0)addInfo('⚡ 额外移动 '+G.pendingExtra+' 步，点击棋盘上发亮的落点。');
+    else if(p.seat.isGhost)addInfo('🎲 原 '+G.baseDice+' 步与 +1 后 '+(G.baseDice+1)+' 步的落点都已显示，点击目标格直接确认步数。');
+    else addInfo('🎲 本回合移动 '+G.dice+' 步'+(G.slowApplied?'（已受减速）':'')+'，点击棋盘上发亮的落点。');
+    addSkillButtons();
+    addGhostUtilityButtons();
+  }else if(G.phase==='post'){
+    if(canEnterLane(p))addInfo('🚪 可点击棋盘上的「入」格进入专属道，或直接结束回合。');
+    addSkillButtons();
+    addGhostUtilityButtons();
+    actionsEl.appendChild(mkBtn('结束回合','primary full',endTurn));
+  }
+  renderMoveTargets();
+}
+
+/* ================= 角色选择 ================= */
+const rolePickerEl=$('#rolePicker');
+function roleRow(owner,label,pool){
+  const row=document.createElement('div'); row.className='role-row';
+  const name=document.createElement('div'); name.className='role-owner'; name.textContent=label;
+  const opts=document.createElement('div'); opts.className='role-options';
+  const sel=document.createElement('select'); sel.className='role-select';
+  for(const role of pool){
+    const opt=document.createElement('option');
+    opt.value=role.id; opt.textContent=role.charName;
+    sel.appendChild(opt);
+  }
+  sel.value=rolePick[owner];
+  const current=roleById(owner,rolePick[owner]);
+  const desc=document.createElement('div'); desc.className='role-desc';
+  const details=[];
+  if(current.desc)details.push(current.desc);
+  if((current.skills||[]).length)details.push('主动技能：'+current.skills.map(sk=>sk.name).join('、'));
+  if((current.passives||[]).length)details.push('被动技能：'+current.passives.map(pv=>pv.name).join('、'));
+  desc.textContent=details.join(' ｜ ');
+  sel.addEventListener('change',()=>{rolePick[owner]=sel.value;saveRolePick();renderRolePicker()});
+  opts.appendChild(sel); opts.appendChild(desc);
+  row.appendChild(name); row.appendChild(opts); return row;
+}
+function roleGroup(title,buildRows){
+  const g=document.createElement('div'); g.className='role-group';
+  const h=document.createElement('div'); h.className='role-heading'; h.textContent=title; g.appendChild(h);
+  buildRows(g); return g;
+}
+function renderRolePicker(){
+  if(!rolePickerEl)return;
+  rolePickerEl.innerHTML='';
+  rolePickerEl.appendChild(roleGroup('👻 鬼阵营',g=>g.appendChild(roleRow('ghost','👻 鬼',ROLE_POOLS.ghost))));
+  rolePickerEl.appendChild(roleGroup('✈ 人类阵营',g=>{for(const c of HUMAN_COLORS)g.appendChild(roleRow(c,META[c].label,ROLE_POOLS.human))}));
+  const note=document.createElement('div'); note.className='role-note'; note.textContent='开局只选择角色；每个角色可配置多个主动技能和被动技能，颜色与角色相互独立。';
+  rolePickerEl.appendChild(note);
+}
+
+/* ================= 事件与启动 ================= */
+rollBtn.addEventListener('click',doRoll);
+$('#rulesBtn').addEventListener('click',()=>rulesModal.classList.remove('hidden'));
+$('#rulesClose').addEventListener('click',()=>rulesModal.classList.add('hidden'));
+$('#startBtn').addEventListener('click',()=>{setupModal.classList.add('hidden');startGame()});
+$('#againBtn').addEventListener('click',()=>{endModal.classList.add('hidden');startGame()});
+$('#resetBtn').addEventListener('click',()=>{
+  if(G)G.over=true;
+  endModal.classList.add('hidden');
+  renderRolePicker();
+  setupModal.classList.remove('hidden');
+});
+$('#soundBtn').addEventListener('click',()=>{
+  muted=!muted;
+  $('#soundBtn').textContent=muted?'\uD83D\uDD07 音效关':'\uD83D\uDD0A 音效开';
+});
+loadRolePick();
+renderRolePicker();
+buildBoard();
+buildFace();
+setDice(0);
+renderActions();
+
+
+
+
+</script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
