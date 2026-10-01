@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>飞行棋 · 局域网联机 MVP</title>
+<style>
+  :root{--ink:#1d2733;--ghost:#e04a3a;--p1:#f0b400;--p2:#1f7fd1;--p3:#3d9e3a}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       gap:22px;padding:18px;flex-wrap:wrap;font-family:"Segoe UI","Microsoft YaHei",Arial,sans-serif;
+       background:linear-gradient(135deg,#e8e4f0,#f6f1e7);color:var(--ink)}
+  .hidden{display:none!important}
+  .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(30,42,60,.55);z-index:10}
+  .card{background:#fff;padding:28px;border-radius:18px;box-shadow:0 24px 60px rgba(30,42,60,.3);width:320px}
+  .card h1{margin:0 0 18px;font-size:20px}
+  .card label{display:block;font-size:13px;margin:12px 0 4px;color:#5a6675}
+  .card input{width:100%;padding:10px;border:1px solid #d5dbe3;border-radius:10px;font-size:14px}
+  .card button{width:100%;margin-top:18px;padding:12px;border:0;border-radius:10px;background:#1f7fd1;color:#fff;font-size:15px;cursor:pointer}
+  .hint{font-size:12px;color:#8a94a0;margin-top:14px;line-height:1.6}
+  .board{width:min(88vw,460px);aspect-ratio:1;background:#f8f4ea;border-radius:24px;
+         box-shadow:0 24px 60px rgba(30,42,60,.22);padding:10px}
+  .panel{width:300px;background:#fff;border-radius:18px;padding:18px;box-shadow:0 16px 40px rgba(30,42,60,.15)}
+  .turn{font-size:16px;font-weight:600;margin-bottom:6px}
+  .dice{font-size:26px;margin-bottom:12px}
+  .players{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+  .prow{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:#f3f5f8;font-size:14px}
+  .prow.active{background:#e3f0fb;box-shadow:inset 0 0 0 2px #1f7fd1}
+  .prow.off{opacity:.45}
+  .dot{width:14px;height:14px;border-radius:50%}
+  .prow .nm{flex:1}
+  .prow .st{font-size:12px;color:#7a8492}
+  .actions{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+  .actions button{padding:11px;border:0;border-radius:10px;background:#1f7fd1;color:#fff;font-size:14px;cursor:pointer}
+  .actions button:disabled{opacity:.4;cursor:default}
+  .actions button.ghost{background:#eef1f5;color:#5a6675}
+  .log{font-size:12px;line-height:1.7;color:#5a6675;max-height:150px;overflow:auto;background:#f7f9fb;border-radius:10px;padding:10px}
+  #toast{position:fixed;left:50%;top:24px;transform:translateX(-50%);background:#1d2733;color:#fff;
+         padding:10px 18px;border-radius:10px;font-size:13px;z-index:20;transition:opacity .3s}
+</style>
+</head>
+<body>
+
+<!-- 加入房间 -->
+<div id="join" class="overlay">
+  <div class="card">
+    <h1>🎲 飞行棋 · 联机</h1>
+    <label>你的名字</label>
+    <input id="name" placeholder="玩家" maxlength="8">
+    <label>房间号</label>
+    <input id="room" value="default" maxlength="16">
+    <button id="joinBtn">加入房间</button>
+    <p class="hint">4 人满员自动开始。把地址栏里的网址发给同一 WiFi 下的朋友即可。</p>
+  </div>
+</div>
+
+<!-- 游戏界面 -->
+<div id="game" class="hidden">
+  <div class="board"><svg viewBox="0 0 400 400" id="svg"></svg></div>
+  <aside class="panel">
+    <div class="turn" id="turnText">等待中…</div>
+    <div class="dice" id="diceText">🎲 -</div>
+    <div class="players" id="players"></div>
+    <div class="actions">
+      <button id="rollBtn">掷骰子</button>
+      <button id="moveBtn">前进</button>
+      <button id="resetBtn" class="ghost">重新开始</button>
+    </div>
+    <div class="log" id="log"></div>
+  </aside>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const $ = (id) => document.getElementById(id);
+const COLORS = ['#e04a3a','#f0b400','#1f7fd1','#3d9e3a'];   // 座位0=鬼(红)
+
+let mySeat = null;
+let state = null;
+
+// ---- 加入 ----
+$('joinBtn').onclick = () => {
+  const name = $('name').value.trim();
+  const room = $('room').value.trim() || 'default';
+  socket.emit('join', { name, room });
+};
+socket.on('joined', (d) => {
+  mySeat = d.seat;
+  $('join').classList.add('hidden');
+  $('game').classList.remove('hidden');
+});
+
+// ---- 收状态 ----
+socket.on('state', (s) => { state = s; render(); });
+
+// ---- 提示 ----
+socket.on('alert', (m) => showToast(m));
+let toastTimer;
+function showToast(m){
+  const t = $('toast');
+  t.textContent = m; t.classList.remove('hidden'); t.style.opacity = 1;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ t.style.opacity = 0; setTimeout(()=>t.classList.add('hidden'),300); }, 1800);
+}
+
+// ---- 操作 ----
+$('rollBtn').onclick = () => socket.emit('roll');
+$('moveBtn').onclick = () => socket.emit('move');
+$('resetBtn').onclick = () => socket.emit('reset');
+
+// ---- 渲染 ----
+function render(){
+  if(!state) return;
+  const { players, turn, dice, phase, round, winner, log, track, maxPlayers } = state;
+
+  // 顶部信息
+  const cur = players[turn];
+  $('turnText').textContent = winner!=null
+    ? ('🏆 ' + players[winner].name + ' 获胜！')
+    : (cur ? ('第 ' + round + ' 轮 · 轮到 ' + cur.name + (turn===mySeat?'（你）':'')) : '等待玩家…');
+  $('diceText').textContent = dice ? ('🎲 ' + dice) : '🎲 -';
+
+  // 玩家列表
+  $('players').innerHTML = players.map((p,i)=>`
+    <div class="prow ${i===turn && winner==null?'active':''} ${p.connected?'':'off'}">
+      <span class="dot" style="background:${COLORS[i]}"></span>
+      <span class="nm">${esc(p.name)}${p.isGhost?' 👻':''}${i===mySeat?' · 你':''}</span>
+      <span class="st">${p.total} 步</span>
+    </div>`).join('') || '<div class="prow">等待玩家加入…</div>';
+
+  // 按钮可用性（仅本地提示；服务器仍会二次校验）
+  const myTurn = (turn===mySeat);
+  $('rollBtn').disabled = !(myTurn && phase==='roll' && winner==null);
+  $('moveBtn').disabled = !(myTurn && phase==='move' && winner==null);
+
+  // 日志
+  $('log').innerHTML = (log||[]).map(l=>'· '+esc(l)).join('<br>');
+
+  drawBoard(players, turn, track, winner);
+}
+
+// ---- 画环形跑道 ----
+function drawBoard(players, turn, track, winner){
+  const svg = $('svg');
+  const cx=200, cy=200, R=150;
+  const pos = (i) => {
+    const a = (-90 + i*360/track) * Math.PI/180;
+    return { x: cx + R*Math.cos(a), y: cy + R*Math.sin(a) };
+  };
+  let html = '';
+  // 跑道格
+  for(let i=0;i<track;i++){
+    const {x,y} = pos(i);
+    html += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="#e6e0d4" stroke="#d3cbb8"/>`;
+    html += `<text x="${x.toFixed(1)}" y="${(y+3).toFixed(1)}" font-size="8" text-anchor="middle" fill="#9a917e">${i+1}</text>`;
+  }
+  // 中心
+  html += `<text x="${cx}" y="${cy}" text-anchor="middle" font-size="14" fill="#b8b0a0">联机 MVP</text>`;
+  // 棋子（同格错开）
+  const byPos = {};
+  players.forEach((p,i)=>{ (byPos[p.pos]=byPos[p.pos]||[]).push({p,i}); });
+  Object.values(byPos).forEach(list=>{
+    list.forEach(({p,i},k)=>{
+      const {x,y} = pos(p.pos);
+      const off = list.length>1 ? (k-(list.length-1)/2)*9 : 0;
+      const isT = (i===turn && winner==null);
+      html += `<circle cx="${(x+off).toFixed(1)}" cy="${(y).toFixed(1)}" r="${isT?11:9}"
+                    fill="${COLORS[i]}" stroke="#fff" stroke-width="${isT?3:2}">
+                    ${isT?'<animate attributeName="r" values="10;12;10" dur="1s" repeatCount="indefinite"/>':''}
+               </circle>`;
+    });
+  });
+  svg.innerHTML = html;
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+</script>
+</body>
+</html>

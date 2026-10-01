@@ -1,0 +1,18 @@
+{
+  "name": "fxq-online",
+  "version": "0.1.0",
+  "description": "飞行棋 4 人局域网联机 MVP 骨架（服务器权威 + Socket.IO）",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test:clients": "node test-clients.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.7.5"
+  }
+}
