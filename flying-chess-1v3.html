@@ -228,7 +228,7 @@ button:disabled{opacity:.45; cursor:default; transform:none}
         · 开局只选择角色，不选择技能；每个角色可拥有多个主动技能和被动技能。<br>
         · 当前角色池：👻 厂长、鹿头；✈ 军人、盲女、光谱。开局选择角色，角色可以拥有多个主动与被动技能。<br>
         · 👻鬼的阵营技「阴阳+1」仍然存在：掷骰后地图会同时显示原点数与 +1 点数的可达格，点击目标格即确认本次移动步数。<br>
-        · 军人：晕眩弹无视距离与免疫，可在任意角色回合发动，令鬼眩晕 1 回合，一局一次；身强体壮免疫鬼的减速；鬼一旦被眩晕，会立即解救其捆绑的人类。盲女：心灵预警在距离鬼不超过 6 格时向远离鬼的方向移动 1 格，每回合一次；与鬼同格时可自行选择移动方向，移动后若停在自身同色格，可继续选择跳跃；解密专家可在密码点前一格完成破译。光谱：连续两个自身回合开始时处于鬼的 6 格范围内，鬼眩晕 1 回合。<br>
+        · 军人：晕眩弹无视距离与免疫，可在任意角色回合发动，令鬼眩晕 1 回合，一局一次；身强体壮免疫鬼的减速；鬼一旦被眩晕，会立即解救其捆绑的人类。盲女：心灵预警在距离鬼不超过 6 格时向远离鬼的方向移动 1 格，自身回合与鬼的回合各一次；与鬼同格时可自行选择移动方向，移动后若停在自身同色格，可继续选择跳跃；解密专家可在密码点前一格完成破译。光谱：连续两个自身回合开始时处于鬼的 6 格范围内，鬼眩晕 1 回合。<br>
         · 厂长：可放置最多两个布娃娃，放置间隔至少 2 轮，每个自己的回合可与一个布娃娃交换一次位置，人类踩到布娃娃会将其清除。鹿头：钩爪可沿指定方向抓回 3 格内的人类并捆绑，站在专属道入口时也可抓出入口内 3 格的人，冷却 3 回合。厂长与鹿头都可攻击相邻人类，使其接下来两个自身回合少走 1 格，不叠加。
       </p>
       <div class="actions"><button class="primary" id="rulesClose" style="flex:1">知道了</button></div>
@@ -360,7 +360,7 @@ const ROLE_POOLS={
     {
       id:'blind-girl', charName:'盲女', desc:'依靠心灵预警脱离鬼的追击，并能提前解密。',
       skills:[
-        {id:'mind-warning',type:'mindWarning',name:'心灵预警',cd:0,range:6,perRound:true,desc:'与鬼距离不超过 6 时，可移动 1 格；同格时自行选择方向，落同色格可继续跳跃；每回合限一次'},
+        {id:'mind-warning',type:'mindWarning',name:'心灵预警',cd:0,range:6,perRound:true,desc:'与鬼距离不超过 6 时，可移动 1 格；同格时自行选择方向，落同色格可继续跳跃；自身回合与鬼的回合各限一次'},
       ],
       passives:[
         {id:'decode-expert',type:'decodeExpert',value:1,name:'解密专家',desc:'距离密码格 1 格时也可以完成解密'},
@@ -1266,7 +1266,7 @@ function skillUsableNow(skill,owner){
     return !owner.isGhost&&p.status!=='out'&&p.status!=='escaped'&&!skill.usedGame&&!['wait','rolling','moving','over'].includes(G.phase);
   }
   if(type==='mindWarning'){
-    if(p.status!=='free'||skill.usedRound===G.round)return false;
+    if(p.status!=='free'||skill.usedTurn===turnKey())return false;
     if(pieceDistance(p,ghostPiece())>(skill.range||6))return false;
     if(active)return G.phase==='roll'||G.phase==='post';
     return SEATS[G.turn].isGhost&&['roll','plus','dir','post'].includes(G.phase);
@@ -1332,7 +1332,7 @@ function useSkill(skill){
   if(type==='mindWarning'){
     const gp=ghostPiece();
     if(gp&&pieceDistance(p,gp)===0){
-      skill.usedRound=G.round;
+      skill.usedTurn=turnKey();
       G.pendingMindWarning={pieceIndex:pieces.indexOf(p),returnPhase:G.phase};
       G.phase='mindWarningDir';
       log('🔮 '+owner.name+'·'+owner.charName+' 与鬼同格，请选择「心灵预警」的移动方向。');
@@ -1341,7 +1341,7 @@ function useSkill(skill){
     }
     const move=mindWarningMove(p);
     if(!move)return;
-    skill.usedRound=G.round;
+    skill.usedTurn=turnKey();
     performMindWarningMove(p,move.dir,G.phase);
     return;
   }
