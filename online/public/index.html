@@ -81,16 +81,26 @@ const COLORS = ['#e04a3a','#f0b400','#1f7fd1','#3d9e3a'];   // 座位0=鬼(红)
 let mySeat = null;
 let state = null;
 
-// ---- 加入 ----
+// ---- 身份令牌（本标签页内持久，刷新不丢）----
+let token = sessionStorage.getItem('fxq_token');
+if(!token){ token = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem('fxq_token', token); }
+// 带出上次填的名字/房间
+$('name').value = sessionStorage.getItem('fxq_name') || '';
+$('room').value = sessionStorage.getItem('fxq_room') || 'default';
+
+// ---- 加入 / 重连 ----
 $('joinBtn').onclick = () => {
   const name = $('name').value.trim();
   const room = $('room').value.trim() || 'default';
-  socket.emit('join', { name, room });
+  sessionStorage.setItem('fxq_name', name);
+  sessionStorage.setItem('fxq_room', room);
+  socket.emit('join', { name, room, token });
 };
 socket.on('joined', (d) => {
   mySeat = d.seat;
   $('join').classList.add('hidden');
   $('game').classList.remove('hidden');
+  if (d.reconnected) showToast('已重新连接（座位 ' + (d.seat + 1) + '）');
 });
 
 // ---- 收状态 ----
