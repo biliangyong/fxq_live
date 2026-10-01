@@ -38,11 +38,11 @@ io.on('connection', (socket) => {
   socket.on('join', (payload = {}) => {
     const roomId = String(payload.room || 'default').trim() || 'default';
     const g = getRoom(roomId);
-    const res = game.addPlayer(g, socket.id, payload.name);
+    const res = game.join(g, socket.id, payload.name, payload.token);
     if (res.error) { socket.emit('alert', res.error); return; }
     socket.join(roomId);
     socket.data.room = roomId;
-    socket.emit('joined', { seat: res.seat, room: roomId });
+    socket.emit('joined', { seat: res.seat, room: roomId, reconnected: !!res.reconnected });
     broadcast(roomId);
     console.log(`[join] ${payload.name || '?'} -> ${roomId}（座位 ${res.seat + 1}）`);
   });
