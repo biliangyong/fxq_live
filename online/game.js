@@ -16,9 +16,9 @@ const MAX_PLAYERS = 4;     // 座位数：1 鬼 + 3 人
 
 function createGame() {
   return {
-    players: [],           // {id, name, seat, pos, total, connected}
-    turn: 0,               // 当前轮到哪个座位
-    dice: 0,               // 本回合骰点
+    players: [],           // {id, name, seat, pos, total, connected, token}
+    turn: 0,
+    dice: 0,
     phase: 'wait',         // wait(等人) | roll(等掷骰) | move(等移动) | over(结束)
     round: 1,
     winner: null,
@@ -31,13 +31,42 @@ function addLog(g, msg) {
   if (g.log.length > 60) g.log.shift();
 }
 
-function addPlayer(g, id, name) {
-  if (g.phase !== 'wait') return { error: '游戏已开始，无法加入' };
+/** 找出可认回的座位：优先按 token，其次按"同名且离线" */
+function findSeatToReclaim(g, token, name) {
+  if (token) {
+    const byToken = g.players.find((p) => p.token && p.token === token);
+    if (byToken) return byToken;
+  }
+  if (name) {
+    const byName = g.players.find((p) => p.name === name && !p.connected);
+    if (byName) return byName;
+  }
+  return null;
+}
+
+/**
+ * 加入 或 重连。
+ * @returns {seat, reconnected?} 或 {error}
+ */
+function join(g, id, name, token) {
+  // 1) 先看能不能认回座位（断线重连）
+  const reclaim = findSeatToReclaim(g, token, name);
+  if (reclaim) {
+    reclaim.id = id;
+    reclaim.connected = true;
+    if (token) reclaim.token = token;
+    addLog(g, `🔌 ${reclaim.name} 重新连接（座位 ${reclaim.seat + 1}）`);
+    return { seat: reclaim.seat, reconnected: true };
+  }
+
+  // 2) 全新玩家：只能在开局前、且有空位时加入
+  if (g.phase !== 'wait') return { error: '游戏已开始，无法加入（等这局结束或重开）' };
   if (g.players.length >= MAX_PLAYERS) return { error: '房间已满（4 人）' };
-  if (g.players.some(p => p.id === id)) return { error: '你已在房间中' };
+  if (g.players.some((p) => p.id === id)) return { error: '你已在房间中' };
+
   const seat = g.players.length;
   const finalName = (name && name.trim()) || ('玩家' + (seat + 1));
-  g.players.push({ id, name: finalName, seat, pos: 0, total: 0, connected: true });
+  g.players.push({ id, name: finalName, seat, pos: 0, total: 0, connected: true, token: token || null });
   addLog(g, `👤 ${finalName} 加入（座位 ${seat + 1}）`);
   if (g.players.length === MAX_PLAYERS) {
     g.phase = 'roll';
@@ -76,7 +105,7 @@ function move(g, id) {
     return { ok: true };
   }
 
-  g.turn = (g.turn + 1) % MAX_PLAYERS;          // 回合推进（服务器说了算）
+  g.turn = (g.turn + 1) % MAX_PLAYERS;
   if (g.turn === 0) g.round++;
   g.dice = 0;
   g.phase = 'roll';
@@ -84,9 +113,11 @@ function move(g, id) {
 }
 
 function reset(g) {
-  const ids = g.players.map(p => ({ id: p.id, name: p.name }));
+  const kept = g.players.map((p) => ({ id: p.id, name: p.name, token: p.token, connected: p.connected }));
   const fresh = createGame();
-  fresh.players = ids.map((x, i) => ({ id: x.id, name: x.name, seat: i, pos: 0, total: 0, connected: true }));
+  fresh.players = kept.map((x, i) => ({
+    id: x.id, name: x.name, seat: i, pos: 0, total: 0, connected: x.connected, token: x.token,
+  }));
   if (fresh.players.length === MAX_PLAYERS) { fresh.phase = 'roll'; fresh.turn = 0; }
   addLog(fresh, '🔄 重新开始');
   return fresh;
@@ -94,7 +125,7 @@ function reset(g) {
 
 function publicState(g) {
   return {
-    players: g.players.map(p => ({
+    players: g.players.map((p) => ({
       name: p.name, seat: p.seat, pos: p.pos, total: p.total,
       connected: p.connected, isGhost: p.seat === 0,
     })),
@@ -111,6 +142,6 @@ function publicState(g) {
 }
 
 module.exports = {
-  createGame, addPlayer, currentPlayer, roll, move, reset, publicState,
+  createGame, join, currentPlayer, roll, move, reset, publicState,
   TRACK, MAX_PLAYERS, LAPS_TO_WIN,
 };
