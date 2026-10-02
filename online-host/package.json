@@ -1,0 +1,15 @@
+{
+  "name": "fxq-hostonline",
+  "version": "0.1.0",
+  "description": "飞行棋 4 人局域网联机（主机权威）",
+  "private": true,
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "test:relay": "node test-relay.js" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.7.5"
+  }
+}
