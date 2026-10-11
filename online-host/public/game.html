@@ -111,9 +111,19 @@ button:disabled{opacity:.45; cursor:default; transform:none}
 .players{display:grid; grid-template-columns:1fr 1fr; gap:8px}
 .pcard{border:1.5px solid #e3e8ee; border-radius:12px; padding:7px 9px; font-size:12.5px; line-height:1.5; background:#fbfcfe; transition:.2s}
 .pcard.active{border-color:var(--ink); box-shadow:0 0 0 2px rgba(29,39,51,.12); background:#fff}
+.pcard.mine{border-color:#1f7fd1; box-shadow:0 0 0 2px rgba(31,127,209,.18); background:#f6fbff}
+.pcard.reaction{border-color:#e0a800; box-shadow:0 0 0 2px rgba(224,168,0,.18); background:#fff9e8}
 .pcard.dead{opacity:.55; filter:grayscale(.7)}
 .pcard .dot{display:inline-block; width:11px; height:11px; border-radius:50%; border:1px solid rgba(0,0,0,.25); margin-right:6px; vertical-align:-1px}
 .pcard .st{font-weight:700}
+.mine-badge{display:inline-block;margin-left:5px;padding:1px 5px;border-radius:6px;background:#1f7fd1;color:#fff;font-size:10px;vertical-align:1px}
+.my-role{display:none;border:1px solid #cfe0f2;border-radius:12px;padding:9px 11px;background:#f4f9ff;font-size:12.5px;line-height:1.55}
+.my-role.show{display:block}
+.my-role .role-title{font-size:13.5px;font-weight:800;color:#194f7f}
+.my-role .role-line{color:#536b7f;margin-top:3px}
+.my-role .ready{color:#2c7a2a;font-weight:800}
+.my-role .spent{color:#8a94a0;font-weight:800}
+.my-role .cooldown{color:#a26b00;font-weight:800}
 .status{min-height:76px; background:#f4f6f9; border-radius:12px; padding:9px 11px; font-size:13px; line-height:1.65}
 .status div{color:#5f7080}
 .status div:first-child{font-weight:700; color:var(--ink)}
@@ -165,9 +175,10 @@ button:disabled{opacity:.45; cursor:default; transform:none}
   <aside class="panel">
     <h1>👻 鬼抓人 · 飞行棋 1v3</h1>
     <div class="turn-line"><span class="turn-dot" id="turnDot"></span><span id="turnText">准备开始</span></div>
+    <div class="my-role" id="myRole"></div>
     <div class="dice-area">
       <div class="dice" id="dice"><div class="face" id="face"></div></div>
-      <button class="primary" id="rollBtn" disabled>🎲 掷骰子</button>
+      <button class="primary" id="rollBtn" data-net-action="doRoll" data-net-args="[]" disabled>🎲 掷骰子</button>
     </div>
     <div class="actions-box" id="actions"></div>
     <div class="obj-bar">
@@ -228,7 +239,7 @@ button:disabled{opacity:.45; cursor:default; transform:none}
         · 开局只选择角色，不选择技能；每个角色可拥有多个主动技能和被动技能。<br>
         · 当前角色池：👻 厂长、鹿头；✈ 军人、盲女、光谱。开局选择角色，角色可以拥有多个主动与被动技能。<br>
         · 👻鬼的阵营技「阴阳+1」仍然存在：掷骰后地图会同时显示原点数与 +1 点数的可达格，点击目标格即确认本次移动步数。<br>
-        · 军人：晕眩弹无视距离与免疫，可在任意角色回合发动，令鬼眩晕 1 回合，一局一次；身强体壮免疫鬼的减速；鬼一旦被眩晕，会立即解救其捆绑的人类。盲女：心灵预警在距离鬼不超过 6 格时向远离鬼的方向移动 1 格，自身回合与鬼的回合各一次；与鬼同格时可自行选择移动方向，移动后若停在自身同色格，可继续选择跳跃；解密专家可在密码点前一格完成破译。光谱：连续两个自身回合开始时处于鬼的 6 格范围内，鬼眩晕 1 回合。<br>
+        · 军人：本人界面常亮「晕眩弹」按钮，无视距离与免疫，可在任意角色回合直接发动，令鬼眩晕 1 回合，一局一次；身强体壮免疫鬼的减速；鬼一旦被眩晕，会立即解救其捆绑的人类。盲女：心灵预警在距离鬼不超过 6 格时向远离鬼的方向移动 1 格，自身回合与鬼的回合各一次；与鬼同格时可自行选择移动方向，移动后若停在自身同色格，可继续选择跳跃；解密专家可在密码点前一格完成破译。光谱：连续两个自身回合开始时处于鬼的 6 格范围内，鬼眩晕 1 回合。<br>
         · 厂长：可放置最多两个布娃娃，放置间隔至少 2 轮，每个自己的回合可与一个布娃娃交换一次位置，人类踩到布娃娃会将其清除。鹿头：钩爪可沿指定方向抓回 3 格内的人类并捆绑，站在专属道入口时也可抓出入口内 3 格的人，冷却 3 回合。厂长与鹿头都可攻击相邻人类，使其接下来两个自身回合少走 1 格，不叠加。
       </p>
       <div class="actions"><button class="primary" id="rulesClose" style="flex:1">知道了</button></div>
@@ -252,7 +263,7 @@ const svg=$('#svg'), ringsEl=$('#rings'), dollsEl=$('#dolls'), piecesEl=$('#piec
 const diceEl=$('#dice'), face=$('#face'), rollBtn=$('#rollBtn'), actionsEl=$('#actions');
 const statusEl=$('#status'), playersEl=$('#players'), turnDot=$('#turnDot'), turnText=$('#turnText');
 const decodePipsEl=$('#decodePips'), escapeBadge=$('#escapeBadge'), roundNumEl=$('#roundNum');
-const statusToastEl=$('#statusToast');
+const statusToastEl=$('#statusToast'), myRoleEl=$('#myRole');
 const setupModal=$('#setupModal'), rulesModal=$('#rulesModal'), endModal=$('#endModal');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const SVGNS='http://www.w3.org/2000/svg';
@@ -351,7 +362,7 @@ const ROLE_POOLS={
     {
       id:'soldier', charName:'军人', desc:'拥有一次性强制控制与减速免疫。',
       skills:[
-        {id:'stun-shot',type:'stunShot',name:'晕眩弹',cd:0,oncePerGame:true,desc:'无视距离与免疫，可在任意角色回合使鬼眩晕 1 回合；一局仅限一次'},
+        {id:'stun-shot',type:'stunShot',name:'晕眩弹',cd:0,oncePerGame:true,desc:'本人界面常亮，可无视距离与免疫，在任意角色回合直接发动，使鬼眩晕 1 回合；一局仅限一次'},
       ],
       passives:[
         {id:'sturdy',type:'slowImmune',name:'身强体壮',desc:'无视鬼的减速效果'},
@@ -612,6 +623,9 @@ function log(t){
 const statusAlertQueue=[];
 let statusAlertTimer=null;
 function showStatusAlert(icon,text,kind='info'){
+  if(typeof window.netEmitStatusAlert==='function'){
+    try{window.netEmitStatusAlert(icon,text,kind)}catch(e){}
+  }
   if(!statusToastEl)return;
   statusAlertQueue.push({icon,text,kind});
   if(!statusAlertTimer)showNextStatusAlert();
@@ -658,6 +672,7 @@ function startGame(){
   buildSeats();
   G={turn:0,round:1,dice:0,baseDice:0,plusUsed:false,phase:'roll',decode:0,decodedLanes:[],unlocked:false,over:false,
      skillUsed:false,pendingExtra:0,animating:false,declineEntry:false,pendingJump:null,pendingMindWarning:null,
+     pendingReaction:null,reactionAsked:{},
      dolls:[],dollPlacedRound:-99,dollPlacedThisTurn:false,dollSwappedThisTurn:false,
      attackUsed:false,pendingHook:null,hookReturnPhase:'post',slowApplied:false};
   clearStatusAlerts();
@@ -994,6 +1009,7 @@ function beginTurn(){
   const seat=SEATS[G.turn], p=seatPiece();
   for(const sk of seat.skills)if(sk.cdLeft>0)sk.cdLeft--;
   G.phase='roll'; G.declineEntry=false; G.pendingExtra=0; G.pendingJump=null; G.pendingHook=null; G.pendingMindWarning=null;
+  G.pendingReaction=null; G.reactionAsked={};
   G.dice=0; G.baseDice=0; G.plusUsed=false; G.dollPlacedThisTurn=false; G.dollSwappedThisTurn=false;
   G.attackUsed=false; G.slowApplied=false; setDice(0);
   if(!seat.isGhost&&p.status==='free'){
@@ -1320,9 +1336,16 @@ function performMindWarningMove(p,dir,returnPhase){
 }
 function useSkill(skill){
   const owner=skillSeat(skill);
-  if(!G||!owner||!skillUsableNow(skill,owner))return;
+  // 别的技能的询问进行中时，仍允许「随时可用」的技能直接插入
+  if(G&&G.pendingReaction&&G.pendingReaction.skillId!==skill.id&&skill.type!=='stunShot')return;
+  const pending=G&&G.pendingReaction&&G.pendingReaction.skillId===skill.id?G.pendingReaction:null;
+  const interrupted=G&&G.pendingReaction&&G.pendingReaction.skillId!==skill.id?G.pendingReaction:null;
+  if(!G||!owner||(!pending&&!skillUsableNow(skill,owner)))return;
+  const returnPhase=pending?pending.returnPhase:(interrupted?interrupted.returnPhase:G.phase);
+  if(pending||interrupted)G.pendingReaction=null;
   const p=pieces[SEATS.indexOf(owner)], type=skill.type;
   if(type==='stunShot'){
+    if(pending||interrupted)G.phase=returnPhase||G.phase;   // 插断询问后恢复原阶段
     skill.usedGame=true;
     SFX.jump();
     stunGhost(1,'💥 '+owner.name+'·'+owner.charName+' 发动「'+skill.name+'」');
@@ -1330,6 +1353,7 @@ function useSkill(skill){
     return;
   }
   if(type==='mindWarning'){
+    if(pending)G.phase=returnPhase||G.phase;
     const gp=ghostPiece();
     if(gp&&pieceDistance(p,gp)===0){
       skill.usedTurn=turnKey();
@@ -1361,6 +1385,71 @@ function useSkill(skill){
     log('⚡ '+owner.name+'·'+owner.charName+' 发动「'+skill.name+'」，选择方向额外移动 '+extra+' 格！');
     renderActions(); updateUI();
   }
+}
+function localSeatIndex(){
+  if(typeof window.netMySeat==='function'){
+    const seat=window.netMySeat();
+    if(Number.isInteger(seat))return seat;
+    return null;
+  }
+  return G?G.turn:null;
+}
+function isSeatControlledLocally(seatIndex){
+  // 单机同屏（未联机）时，所有座位都由本地这台机器操作
+  const inMatch=typeof window.netMatchActive==='function'&&window.netMatchActive();
+  if(!inMatch)return true;
+  const local=localSeatIndex();
+  if(local===null||local===undefined)return false;
+  return local===seatIndex;
+}
+function findPendingReactionSkill(pending){
+  if(!pending)return null;
+  for(const seat of SEATS){
+    const skill=(seat.skills||[]).find(sk=>sk.id===pending.skillId);
+    if(skill)return {skill,owner:seat};
+  }
+  return null;
+}
+function maybeStartReaction(){
+  if(typeof window.netMatchActive==='function'&&window.netMatchActive()
+    &&!(typeof window.netIsHost==='function'&&window.netIsHost()))return false;
+  if(!G||G.over||G.animating||G.pendingReaction||G.phase==='reaction'||G.phase==='wait'||G.phase==='hookDir'||G.phase==='mindWarningDir')return false;
+  // 用"回合+阶段"作为询问键：同一阶段不重复打扰，阶段推进后（例如鬼移动完）可再次询问，
+  // 避免技能所有者过早跳过而错过真正的发动时机。
+  const currentKey=turnKey()+':'+G.phase;
+  const asked=G.reactionAsked||(G.reactionAsked={});
+  const active=SEATS[G.turn];
+  for(const owner of SEATS){
+    if(owner===active)continue;
+    for(const skill of (owner.skills||[])){
+      // 「随时可用」的技能（如军人晕眩弹）不走询问，改为本人界面常亮按钮
+      if(skill.type==='stunShot')continue;
+      if(asked[skill.id]===currentKey)continue;
+      if(!skillUsableNow(skill,owner))continue;
+      G.pendingReaction={
+        skillId:skill.id,
+        skillName:skill.name,
+        ownerSeat:SEATS.indexOf(owner),
+        returnPhase:G.phase,
+        askKey:currentKey,
+      };
+      G.phase='reaction';
+      log('⏳ 等待 '+owner.name+'·'+owner.charName+' 决定是否发动「'+skill.name+'」。');
+      return true;
+    }
+  }
+  return false;
+}
+function declineReaction(remoteAuthorized){
+  const pending=G&&G.pendingReaction;
+  if(!pending||(!remoteAuthorized&&!isSeatControlledLocally(pending.ownerSeat)))return;
+  const found=findPendingReactionSkill(pending);
+  if(!G.reactionAsked)G.reactionAsked={};
+  G.reactionAsked[pending.skillId]=pending.askKey||turnKey();
+  G.pendingReaction=null;
+  G.phase=pending.returnPhase||'roll';
+  log('⏭ '+(found?found.owner.name:'技能所有者')+' 跳过了「'+pending.skillName+'」。');
+  renderActions(); updateUI();
 }
 function chooseMindWarningDir(dir){
   if(!G||G.phase!=='mindWarningDir'||!G.pendingMindWarning)return;
@@ -1499,10 +1588,12 @@ function updateUI(){
   turnText.textContent=G.over?'对局结束':(seat.isGhost?'👻 ':'')+seat.name+(seat.charName?' · '+seat.charName:'')+' 回合 · 第 '+G.round+' 轮';
   rollBtn.disabled=!(G.phase==='roll'&&!G.animating&&!G.over);
   playersEl.innerHTML='';
+  const localSeat=localSeatIndex();
+  const pendingOwner=G.pendingReaction?G.pendingReaction.ownerSeat:null;
   for(let i=0;i<SEATS.length;i++){
     const sd=SEATS[i], p=pieces[i];
     const card=document.createElement('div');
-    card.className='pcard'+(i===G.turn&&!G.over?' active':'')+((p.status==='out')?' dead':'');
+    card.className='pcard'+(i===G.turn&&!G.over?' active':'')+(i===localSeat?' mine':'')+(i===pendingOwner?' reaction':'')+((p.status==='out')?' dead':'');
     let st;
     if(p.status==='free')st='<span class="st">自由</span>';
     else if(p.status==='carried')st='<span class="st">被捆绑 · 随鬼移动 ⏱'+p.carryT+'</span>';
@@ -1515,18 +1606,59 @@ function updateUI(){
     if(p.flashTurns>0)extras.push('🔦预警'+p.flashTurns+'/2');
     if(p.shield>0)extras.push('🛡护盾');
     if(p.immune>0)extras.push('✨免疫'+p.immune);
-    const activeText=sd.skills.map(sk=>sk.name+(sk.cdLeft>0?'（冷却 '+sk.cdLeft+'）':(sk.usedGame?'（已用）':'（就绪）'))).join(' / ')||'无';
+    const activeText=sd.skills.map(sk=>sk.name+'（'+skillStatusText(sk,i)+'）').join(' / ')||'无';
     const passiveText=sd.passives.length?' ｜ 被动：'+sd.passives.map(pv=>pv.name).join('、'):'';
-    card.innerHTML='<span class="dot" style="background:'+META[sd.color].main+'"></span><b>'+(sd.isGhost?'👻 鬼':sd.name)+' · '+sd.charName+'</b>'
+    card.innerHTML='<span class="dot" style="background:'+META[sd.color].main+'"></span><b>'+(sd.isGhost?'👻 鬼':sd.name)+' · '+sd.charName+'</b>'+(i===localSeat?'<span class="mine-badge">你</span>':'')
       +'<br>'+st+(extras.length?' <span style="font-size:11px">'+extras.join(' ')+'</span>':'')
       +'<br><span style="font-size:11px;color:#7a8a99">主动：'+activeText+passiveText+'</span>';
     playersEl.appendChild(card);
   }
+  updateMyRole();
+  if(typeof window.netRefreshTurnBar==='function')window.netRefreshTurnBar();
 }
-function mkBtn(label,cls,fn,disabled){
+function skillStatusText(skill,seatIndex){
+  if(skill.cdLeft>0)return '冷却 '+skill.cdLeft;
+  if(skill.usedGame)return '本局已用';
+  if(skill.usedTurn===turnKey())return '本回合已用';
+  return '就绪';
+}
+function updateMyRole(){
+  if(!myRoleEl)return;
+  const index=localSeatIndex();
+  const seat=index===null||index===undefined?null:SEATS[index];
+  if(!seat){
+    myRoleEl.classList.remove('show');
+    myRoleEl.innerHTML='';
+    return;
+  }
+  const skillLines=(seat.skills||[]).map(skill=>{
+    const status=skillStatusText(skill,index);
+    const cls=status==='就绪'?'ready':(status.indexOf('冷却')===0?'cooldown':'spent');
+    return '<div class="role-line"><b>'+escHtml(skill.name)+'</b> <span class="'+cls+'">'+escHtml(status)+'</span><br>'+escHtml(skill.desc||'')+'</div>';
+  }).join('')||'<div class="role-line">无主动技能</div>';
+  const passiveLines=(seat.passives||[]).map(passive=>
+    '<div class="role-line"><b>'+escHtml(passive.name)+'</b><br>'+escHtml(passive.desc||'')+'</div>'
+  ).join('')||'<div class="role-line">无被动技能</div>';
+  const pending=G&&G.pendingReaction&&G.pendingReaction.ownerSeat===index
+    ? '<div class="role-line"><b>现在由你决定：</b>'+escHtml(G.pendingReaction.skillName)+'</div>'
+    : '';
+  myRoleEl.innerHTML='<div class="role-title">你的身份 · '+(seat.isGhost?'👻 鬼阵营':escHtml(seat.name)+' · ✈ 人类阵营')+' · '+escHtml(seat.charName)+'</div>'
+    +'<div class="role-line">'+escHtml(seat.roleDesc||'')+'</div>'
+    +'<div class="role-line"><b>主动技能</b></div>'+skillLines
+    +'<div class="role-line"><b>被动技能</b></div>'+passiveLines+pending;
+  myRoleEl.classList.add('show');
+}
+function escHtml(value){
+  return String(value==null?'':value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+}
+function mkBtn(label,cls,fn,disabled,netAction,netArgs){
   const b=document.createElement('button');
   b.textContent=label;
   if(cls)b.className=cls;
+  if(netAction){
+    b.dataset.netAction=netAction;
+    b.dataset.netArgs=JSON.stringify(netArgs||[]);
+  }
   b.disabled=!!disabled;
   b.addEventListener('click',fn);
   return b;
@@ -1539,48 +1671,93 @@ function addInfo(text){
 }
 function addSkillButtons(){
   for(const item of usableSkills()){
-    const prefix=item.owner===SEATS[G.turn]?'':item.owner.name+' · ';
-    actionsEl.appendChild(mkBtn('⚡ '+prefix+item.skill.name,'',()=>useSkill(item.skill)));
+    if(item.owner!==SEATS[G.turn])continue;
+    if(item.skill.type==='stunShot')continue;   // 常亮技能单独渲染，避免重复
+    actionsEl.appendChild(mkBtn('⚡ '+item.skill.name,'',()=>useSkill(item.skill),false,'useSkill',[item.skill.id]));
+  }
+}
+// 常亮技能（如军人晕眩弹）：本人界面始终显示按钮，点一下直接插入当前局势，不做询问
+function instantSkillsOwnedLocally(){
+  const out=[];
+  for(const seat of SEATS){
+    for(const skill of (seat.skills||[])){
+      if(skill.type!=='stunShot')continue;
+      if(!isSeatControlledLocally(SEATS.indexOf(seat)))continue;
+      out.push({skill,owner:seat});
+    }
+  }
+  return out;
+}
+function addInstantSkillButtons(){
+  for(const item of instantSkillsOwnedLocally()){
+    const usable=skillUsableNow(item.skill,item.owner);
+    const label=usable
+      ?('⚡ 发动 '+item.skill.name+'（随时可用）')
+      :('⚡ '+item.skill.name+'（'+(item.skill.usedGame?'本局已用':'暂不可用')+'）');
+    actionsEl.appendChild(mkBtn(label,usable?'primary full':'full',()=>useSkill(item.skill),!usable,'useSkill',[item.skill.id]));
   }
 }
 function addGhostUtilityButtons(){
   const seat=SEATS[G.turn], p=seatPiece();
   if(!seat.isGhost||p.status!=='free')return;
   if(seat.skills.some(sk=>sk.type==='doll')){
-    if(canPlaceDoll())actionsEl.appendChild(mkBtn('🧸 放置布娃娃','',placeDoll));
+    if(canPlaceDoll())actionsEl.appendChild(mkBtn('🧸 放置布娃娃','',placeDoll,false,'placeDoll',[]));
     if(!G.dollSwappedThisTurn){
-      G.dolls.forEach((d,index)=>actionsEl.appendChild(mkBtn('🔁 与布娃娃 '+(index+1)+' 交换','',()=>swapWithDoll(index))));
+      G.dolls.forEach((d,index)=>actionsEl.appendChild(mkBtn('🔁 与布娃娃 '+(index+1)+' 交换','',()=>swapWithDoll(index),false,'swapWithDoll',[index])));
     }
   }
   if(canUseAdjacentAttack()){
-    adjacentHumanTargets().forEach(t=>actionsEl.appendChild(mkBtn('🎯 攻击 '+t.seat.name+'（减速）','',()=>useAdjacentAttack(pieces.indexOf(t)))));
+    adjacentHumanTargets().forEach(t=>actionsEl.appendChild(mkBtn('🎯 攻击 '+t.seat.name+'（减速）','',()=>useAdjacentAttack(pieces.indexOf(t)),false,'useAdjacentAttack',[pieces.indexOf(t)])));
   }
 }
 function renderActions(){
   if(!G){actionsEl.innerHTML='';return}
+  maybeStartReaction();
   actionsEl.innerHTML='';
   const seat=SEATS[G.turn], p=seatPiece();
   if(G.over)return;
+  addInstantSkillButtons();
+  if(G.phase==='reaction'){
+    const pending=G.pendingReaction;
+    const found=findPendingReactionSkill(pending);
+    if(pending&&found){
+      addInfo('⏳ '+found.owner.name+'·'+found.owner.charName+' 正在决定是否发动「'+found.skill.name+'」。');
+      if(isSeatControlledLocally(pending.ownerSeat)){
+        actionsEl.appendChild(mkBtn('⚡ 发动 '+found.skill.name,'primary',()=>useSkill(found.skill),false,'useSkill',[found.skill.id]));
+        actionsEl.appendChild(mkBtn('跳过这次发动','full',declineReaction,false,'declineReaction',[]));
+      }
+    }else{
+      G.pendingReaction=null;
+      G.phase='roll';
+    }
+    renderMoveTargets();
+    return;
+  }
+  if(typeof window.netMatchActive==='function'&&window.netMatchActive()&&!isSeatControlledLocally(G.turn)){
+    addInfo('等待 '+seat.name+(seat.charName?'·'+seat.charName:'')+' 行动…');
+    renderMoveTargets();
+    return;
+  }
   if(G.phase==='roll'){
     addSkillButtons();
     addGhostUtilityButtons();
     if(!actionsEl.children.length)addInfo('掷骰子开始本回合。');
   }else if(G.phase==='plus'){
-    actionsEl.appendChild(mkBtn('🎲 点数+1（走 '+(G.baseDice+1)+' 步）','primary',()=>choosePlus(true)));
-    actionsEl.appendChild(mkBtn('保持 '+G.baseDice+' 点（走 '+G.baseDice+' 步）','',()=>choosePlus(false)));
+    actionsEl.appendChild(mkBtn('🎲 点数+1（走 '+(G.baseDice+1)+' 步）','primary',()=>choosePlus(true),false,'choosePlus',[true]));
+    actionsEl.appendChild(mkBtn('保持 '+G.baseDice+' 点（走 '+G.baseDice+' 步）','',()=>choosePlus(false),false,'choosePlus',[false]));
     addSkillButtons();
     addGhostUtilityButtons();
   }else if(G.phase==='hookDir'){
     addSkillButtons();
     addInfo('🪝 选择钩爪方向与目标');
-    for(const h of G.pendingHook)actionsEl.appendChild(mkBtn(h.label,'primary',()=>chooseHookTarget(h.targetIndex)));
-    actionsEl.appendChild(mkBtn('取消钩爪','full',cancelHook));
+    for(const h of G.pendingHook)actionsEl.appendChild(mkBtn(h.label,'primary',()=>chooseHookTarget(h.targetIndex),false,'chooseHookTarget',[h.targetIndex]));
+    actionsEl.appendChild(mkBtn('取消钩爪','full',cancelHook,false,'cancelHook',[]));
   }else if(G.phase==='mindWarningDir'){
     const warning=G.pendingMindWarning;
     const warningPiece=warning?pieces[warning.pieceIndex]:null;
     addInfo('🔮 盲女与鬼同格，选择「心灵预警」的移动方向。');
     if(warningPiece){
-      for(const option of dirOptions(warningPiece))actionsEl.appendChild(mkBtn('🔮 '+option.label,'primary',()=>chooseMindWarningDir(option.dir)));
+      for(const option of dirOptions(warningPiece))actionsEl.appendChild(mkBtn('🔮 '+option.label,'primary',()=>chooseMindWarningDir(option.dir),false,'chooseMindWarningDir',[option.dir]));
     }
   }else if(G.phase==='jump'){
     addInfo('⭐ 点击棋盘上的长跳或最近同色格；点击自己表示不跳跃。');
@@ -1595,7 +1772,7 @@ function renderActions(){
     if(canEnterLane(p))addInfo('🚪 可点击棋盘上的「入」格进入专属道，或直接结束回合。');
     addSkillButtons();
     addGhostUtilityButtons();
-    actionsEl.appendChild(mkBtn('结束回合','primary full',endTurn));
+    actionsEl.appendChild(mkBtn('结束回合','primary full',endTurn,false,'endTurn',[]));
   }
   renderMoveTargets();
 }

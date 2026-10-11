@@ -1,17 +1,73 @@
 /* ============================================================
  * 飞行棋 · 联机层（主机权威）
  * ------------------------------------------------------------
- * 本文件在游戏主脚本【之后】加载，直接复用游戏的全部逻辑函数。
+ * 本文件在游戏主脚本之后加载，复用单机版全部规则与渲染函数。
  *
- * 主机(第一个进房的人)：浏览器里跑完整游戏，定期广播状态快照。
- * 观众：用快照渲染同一块棋盘；轮到自己时，把操作转发给主机。
+ * 主机：运行完整游戏，定时广播状态快照。
+ * 观众：按快照渲染棋盘，把自己的操作转发给主机执行。
  * ============================================================ */
 (function () {
   const socket = io();
   const $ = (id) => document.getElementById(id);
-  let myId = null, isHost = false, roomId = null, mySeat = null, started = false, bypass = false;
-  let hostSeat = null, hostAssign = null;
-  let viewerSeated = false, lastSeatsKey = '';
+  let myId = null;
+  let isHost = false;
+  let roomId = null;
+  let mySeat = null;
+  let hostSeat = null;
+  let hostAssign = null;
+  let started = false;
+  let bypass = false;
+  let viewerSeated = false;
+  let lastSeatsKey = '';
+  let lastEndKey = '';
+  let hostSnapTimer = null;
+  const SESSION_KEY = 'fxq-online-session-v1';
+  let savedSession = loadSession();
+  let pendingJoin = null;
+
+  function loadSession() {
+    try {
+      const value = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+      if (!value || typeof value !== 'object') return null;
+      return {
+        room: String(value.room || '').trim(),
+        name: String(value.name || '').trim(),
+        token: String(value.token || '').trim(),
+        auto: value.auto !== false,
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveSession(next) {
+    savedSession = next;
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify(next)); } catch (e) {}
+  }
+
+  function requestJoin(payload) {
+    pendingJoin = payload;
+    if (socket.connected) flushPendingJoin();
+  }
+
+  function flushPendingJoin() {
+    if (!pendingJoin) return;
+    const payload = pendingJoin;
+    pendingJoin = null;
+    socket.emit('join', payload);
+  }
+
+  function showReconnectState() {
+    if (savedSession && savedSession.name) $('netName').value = savedSession.name;
+    if (savedSession && savedSession.room) {
+      $('netRoom').value = savedSession.room;
+      roomId = savedSession.room;
+      $('netRoomLabel').textContent = savedSession.room;
+    }
+    $('joinForm').style.display = 'none';
+    $('lobbyPanel').style.display = 'block';
+    $('netMsg2').textContent = '正在恢复上次的座位和对局…';
+  }
 
   /* ---------- 注入大厅 UI ---------- */
   const style = document.createElement('style');
@@ -26,12 +82,13 @@
   #netLobby button:disabled{opacity:.45;cursor:default}
   .netMember{display:flex;gap:8px;align-items:center;padding:8px;border-radius:10px;background:#f3f5f8;margin-bottom:8px;font-size:13px;flex-wrap:wrap}
   .netMember .nm{font-weight:700;min-width:60px}
+  .netMember.offline{opacity:.55}
   .netMember select{padding:4px;border-radius:8px;border:1px solid #d5dbe3;font-size:12px}
   .netMember.host{outline:2px solid #f0b400}
   .netBadge{font-size:11px;padding:1px 6px;border-radius:6px;background:#e3f0fb;color:#1f7fd1}
   #netMsg{font-size:12px;color:#e04a3a;min-height:16px;margin-top:8px}
   #netTurn{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:9998;background:#1d2733;color:#fff;
-    padding:8px 18px;border-radius:20px;font-size:14px;display:none}
+    padding:8px 18px;border-radius:20px;font-size:14px;display:none;box-shadow:0 8px 24px rgba(20,30,40,.25)}
   `;
   document.head.appendChild(style);
 
@@ -54,37 +111,65 @@
       </div>
     </div>`;
   document.body.appendChild(lobby);
+
   const turnBar = document.createElement('div');
   turnBar.id = 'netTurn';
   document.body.appendChild(turnBar);
-
-  const ROLE_LABEL = {};
-  ROLE_POOLS.ghost.concat(ROLE_POOLS.human).forEach((r) => { ROLE_LABEL[r.id] = r.charName; });
 
   /* ---------- 连接与大厅 ---------- */
   $('netJoin').onclick = () => {
     const name = $('netName').value.trim();
     roomId = $('netRoom').value.trim() || 'default';
-    socket.emit('join', { room: roomId, name });
+    const sameRoomToken = savedSession && savedSession.room === roomId ? savedSession.token : '';
+    saveSession({ room: roomId, name, token: sameRoomToken || '', auto: true });
+    requestJoin({ room: roomId, name, reconnectToken: sameRoomToken || undefined });
     $('joinForm').style.display = 'none';
     $('lobbyPanel').style.display = 'block';
     $('netRoomLabel').textContent = roomId;
+    $('netMsg2').textContent = '';
   };
-  socket.on('you', (d) => { myId = d.id; isHost = d.isHost; });
+  socket.on('connect', () => {
+    if (savedSession && savedSession.auto && savedSession.token && savedSession.room) {
+      showReconnectState();
+      requestJoin({
+        room: savedSession.room,
+        name: savedSession.name || $('netName').value.trim() || '玩家',
+        reconnectToken: savedSession.token,
+      });
+      return;
+    }
+    flushPendingJoin();
+  });
+  socket.on('you', (d) => {
+    myId = d.id;
+    isHost = !!d.isHost;
+    roomId = d.room || roomId;
+    const name = $('netName').value.trim() || (savedSession && savedSession.name) || '玩家';
+    if (d.token) saveSession({ room: roomId, name, token: d.token, auto: true });
+    if (d.resumed) $('netMsg2').textContent = '已重新连接，正在恢复对局。';
+  });
   socket.on('err', (m) => { $('netMsg').textContent = m; $('netMsg2').textContent = m; });
   socket.on('lobby', (st) => renderLobby(st));
+  socket.on('start', ({ assign }) => startMatch(assign));
+  socket.on('resume', ({ assign, snapshot } = {}) => resumeMatch(assign, snapshot));
+  socket.on('alert', (payload) => {
+    if (!payload || bypass) return;
+    showStatusAlert(payload.icon || 'ℹ️', payload.text || '', payload.kind || 'info');
+  });
+  socket.on('act', handleRemoteAction);
+  socket.on('command', handleRemoteCommand);
 
   function renderLobby(st) {
-    mySeat = null;
     const wrap = $('netMembers');
     wrap.innerHTML = '';
     st.members.forEach((m) => {
       const row = document.createElement('div');
-      row.className = 'netMember' + (m.isHost ? ' host' : '');
+      row.className = 'netMember' + (m.isHost ? ' host' : '') + (m.connected === false ? ' offline' : '');
       const mine = m.id === myId;
       const rolePool = m.faction === 'ghost' ? ROLE_POOLS.ghost : ROLE_POOLS.human;
       row.innerHTML = `<span class="nm">${esc(m.name)}</span>
         ${m.isHost ? '<span class="netBadge">主机</span>' : ''}
+        ${m.connected === false ? '<span class="netBadge">离线</span>' : ''}
         <select data-f="faction" ${mine ? '' : 'disabled'}>
           <option value="ghost" ${m.faction === 'ghost' ? 'selected' : ''}>👻 鬼</option>
           <option value="human" ${m.faction === 'human' ? 'selected' : ''}>✈ 人</option>
@@ -93,7 +178,10 @@
           ${rolePool.map((r) => `<option value="${r.id}" ${m.roleId === r.id ? 'selected' : ''}>${r.charName}</option>`).join('')}
         </select>`;
       if (mine) {
-        row.querySelector('[data-f="faction"]').onchange = (e) => socket.emit('pick', { faction: e.target.value, roleId: rolePool[0].id });
+        row.querySelector('[data-f="faction"]').onchange = (e) => {
+          const nextPool = e.target.value === 'ghost' ? ROLE_POOLS.ghost : ROLE_POOLS.human;
+          socket.emit('pick', { faction: e.target.value, roleId: nextPool[0].id });
+        };
         row.querySelector('[data-f="role"]').onchange = (e) => socket.emit('pick', { roleId: e.target.value });
       }
       wrap.appendChild(row);
@@ -105,166 +193,522 @@
   $('netStart').onclick = () => socket.emit('start');
 
   /* ---------- 开局 ---------- */
-  socket.on('start', ({ assign }) => {
+  function startMatch(assign) {
     hostAssign = assign;
+    started = true;
+    mySeat = null;
+    lastEndKey = '';
     lobby.style.display = 'none';
     setupModal.classList.add('hidden');
+    endModal.classList.add('hidden');
+    clearStatusAlerts();
     const me = assign.find((a) => a.id === myId);
-    const myViewerSeat = me ? me.seat : null;
-    if (isHost) startAsHost(assign); else startAsViewer(assign, myViewerSeat);
-  });
+    if (isHost) startAsHost(assign, me ? me.seat : 0);
+    else startAsViewer(assign, me ? me.seat : null);
+  }
+
+  function resumeMatch(assign, snapshot) {
+    if (!Array.isArray(assign)) return;
+    hostAssign = assign;
+    started = true;
+    mySeat = null;
+    lastEndKey = '';
+    lobby.style.display = 'none';
+    setupModal.classList.add('hidden');
+    endModal.classList.add('hidden');
+    clearStatusAlerts();
+    const me = assign.find((a) => a.id === myId);
+    mySeat = me ? me.seat : null;
+
+    if (isHost) {
+      hostSeat = mySeat === null ? 0 : mySeat;
+      mySeat = hostSeat;
+      installSeatApi();
+      applyRoleAssignment(assign);
+
+      // 页面刷新后从服务器缓存恢复；同一页面短暂断网时保留更新的本地状态。
+      if (typeof G === 'undefined' || !G) {
+        if (snapshot) {
+          if (Array.isArray(snapshot.seats)) viewerBuildSeats(snapshot.seats);
+          applySnapshot(snapshot);
+        } else {
+          startGame();
+          applySeatNames(assign);
+        }
+      }
+      installHostRuntime();
+      $('netMsg2').textContent = '已重新连接，恢复为主机。';
+      return;
+    }
+
+    installSeatApi();
+    installInputBridge();
+    if (snapshot) applySnapshot(snapshot);
+    else startAsViewer(assign, mySeat);
+    $('netMsg2').textContent = '已重新连接，座位和角色已恢复。';
+    showTurnBar();
+  }
 
   /* ============ 主机 ============ */
-  function startAsHost(assign) {
-    started = true;
-    hostSeat = assign.find((a) => a.id === myId).seat;
-    // 用大厅的选择覆盖 rolePick，并让座位带上玩家名字
+  function startAsHost(assign, seat) {
+    hostSeat = seat;
+    mySeat = seat;
+    installSeatApi();
+    applyRoleAssignment(assign);
+    startGame();
+    applySeatNames(assign);
+    installHostRuntime();
+  }
+
+  function installHostRuntime() {
+    wrapHostGuards();
+    installInputBridge();
+
+    window.netEmitStatusAlert = (icon, text, kind) => socket.emit('alert', { icon, text, kind });
+    clearInterval(hostSnapTimer);
+    hostSnapTimer = setInterval(() => {
+      if (started && G) socket.emit('snap', makeSnapshot());
+    }, 250);
+    socket.emit('snap', makeSnapshot());
+    showTurnBar();
+  }
+
+  function applyRoleAssignment(assign) {
     rolePick.ghost = assign[0].roleId;
     const colors = ['green', 'yellow', 'blue'];
     assign.slice(1).forEach((a, i) => { rolePick[colors[i]] = a.roleId; });
-    const _buildSeats = buildSeats;
-    buildSeats = function () {
-      _buildSeats();
-      assign.forEach((a, i) => { if (SEATS[i]) SEATS[i].name = a.name; });
-    };
-    startGame();
-    wrapHostGuards();
-    // 广播快照
-    setInterval(() => { if (started) socket.emit('snap', makeSnapshot()); }, 250);
-    // 接收观众操作
-    socket.on('act', ({ fn, args, fromSeat }) => {
-      if (!started || G == null) return;
-      if (fromSeat === undefined || fromSeat !== G.turn) return;   // 只接受"当前回合玩家"的操作
-      bypass = true;
-      try { applyRemoteAction(fn, args); } finally { bypass = false; }
+  }
+
+  function applySeatNames(assign) {
+    assign.forEach((a, i) => {
+      if (!SEATS[i]) return;
+      SEATS[i].name = a.name || SEATS[i].name;
+      SEATS[i].seat = a.seat;
     });
-    showTurnBar();
+    renderPieces();
+    renderActions();
+    updateUI();
   }
 
   const LOCAL_FNS = ['doRoll', 'choosePlus', 'undoPlus', 'endTurn', 'declineLongJump', 'confirmLongJump',
     'enterLane', 'cancelHook', 'chooseHookTarget', 'chooseMindWarningDir', 'placeDoll', 'swapWithDoll',
-    'useAdjacentAttack', 'chooseDir', 'chooseExtraDir'];
+    'useAdjacentAttack', 'chooseDir', 'chooseExtraDir', 'declineReaction'];
+
+  function hostMayUseReaction(fn) {
+    return !!(G && G.pendingReaction && G.pendingReaction.ownerSeat === hostSeat
+      && (fn === 'useSkill' || fn === 'declineReaction'));
+  }
+
+  // 「随时可用」的技能（如军人晕眩弹）：技能所有者可在任意回合直接插入，无需询问
+  function isInstantSkill(skill) {
+    return !!skill && skill.type === 'stunShot';
+  }
+  function instantSkillOwnedBy(id, seat) {
+    const skill = findSkillById(String(id || ''));
+    if (!isInstantSkill(skill)) return false;
+    const owner = skillSeat(skill);
+    return !!owner && SEATS.indexOf(owner) === Number(seat);
+  }
+
   function wrapHostGuards() {
     LOCAL_FNS.forEach((name) => {
       const orig = window[name];
-      if (typeof orig !== 'function') return;
-      window[name] = function (...args) {
-        if (started && G && G.turn !== hostSeat && !bypass) return;   // 不是主机的回合，忽略本地点击
+      if (typeof orig !== 'function' || orig.__fxqGuard) return;
+      const guarded = function (...args) {
+        if (started && G && G.turn !== hostSeat && !bypass && !hostMayUseReaction(name)) return;
         return orig.apply(this, args);
       };
+      guarded.__fxqGuard = true;
+      window[name] = guarded;
     });
     const origUse = window.useSkill;
-    window.useSkill = function () {
-      if (started && G && G.turn !== hostSeat && !bypass) return;
-      return origUse.apply(this, arguments);
-    };
+    if (typeof origUse === 'function' && !origUse.__fxqGuard) {
+      const guardedUse = function (...args) {
+        if (started && G && !bypass) {
+          const owner = skillSeat(args[0]);
+          const ownerSeat = owner ? SEATS.indexOf(owner) : -1;
+          const instant = ownerSeat === hostSeat && isInstantSkill(args[0]);
+          if (!instant) {
+            if (ownerSeat !== hostSeat && !hostMayUseReaction('useSkill')) return;
+            if (G.turn !== hostSeat && !hostMayUseReaction('useSkill')) return;
+          }
+        }
+        return origUse.apply(this, args);
+      };
+      guardedUse.__fxqGuard = true;
+      window.useSkill = guardedUse;
+    }
   }
+
+  function handleRemoteAction({ fn, args, fromSeat } = {}) {
+    if (!isHost || !started || !G || G.over) return;
+    if (fromSeat === undefined) return;
+    const pending = G.pendingReaction;
+    const instantFromSender = fn === 'useSkill' && instantSkillOwnedBy(args && args[0], fromSeat);
+    if (pending) {
+      const reactionAction = fromSeat === pending.ownerSeat
+        && (fn === 'useSkill' || fn === 'declineReaction');
+      if (!reactionAction && !instantFromSender) return;
+      if (reactionAction && fn === 'useSkill') {
+        const skill = findSkillById(String((args && args[0]) || ''));
+        if (!skill || skill.id !== pending.skillId || skillSeat(skill) !== SEATS[pending.ownerSeat]) return;
+      }
+    } else {
+      if (!instantFromSender && fromSeat !== G.turn) return;
+      if (fn === 'useSkill' && !instantFromSender) {
+        const skill = findSkillById(String((args && args[0]) || ''));
+        if (!skill || skillSeat(skill) !== SEATS[fromSeat]) return;
+      }
+    }
+    if (!REMOTE_ACTIONS.has(fn)) return;
+    bypass = true;
+    try {
+      applyRemoteAction(fn, Array.isArray(args) ? args : []);
+    } finally {
+      bypass = false;
+    }
+  }
+
+  function handleRemoteCommand(command) {
+    if (!isHost || !started || !command) return;
+    if (command.type === 'restart') restartAssignedGame();
+  }
+
+  function restartAssignedGame() {
+    if (!hostAssign) return;
+    endModal.classList.add('hidden');
+    clearStatusAlerts();
+    applyRoleAssignment(hostAssign);
+    startGame();
+    applySeatNames(hostAssign);
+    socket.emit('snap', makeSnapshot());
+  }
+
+  const REMOTE_ACTIONS = new Set(['useSkill', 'moveTarget', ...LOCAL_FNS]);
+
   function applyRemoteAction(fn, args) {
-    if (fn === 'useSkill') { const sk = findSkillById(args[0]); if (sk) useSkill(sk); return; }
-    if (fn === 'moveTarget') { doMoveTarget(args[0]); return; }
-    const f = window[fn];
-    if (typeof f === 'function') f(...args);
+    if (fn === 'useSkill') {
+      const skill = findSkillById(String(args[0] || ''));
+      if (skill) useSkill(skill);
+      return;
+    }
+    if (fn === 'declineReaction') {
+      declineReaction(true);
+      return;
+    }
+    if (fn === 'moveTarget') {
+      doMoveTarget(args[0]);
+      return;
+    }
+    const target = window[fn];
+    if (typeof target === 'function' && REMOTE_ACTIONS.has(fn)) target(...args);
   }
+
   function findSkillById(id) {
-    const p = pieces[G.turn];
-    if (!p) return null;
-    return (p.seat.skills || []).find((sk) => sk.id === id) || null;
+    for (const seat of SEATS) {
+      const skill = (seat.skills || []).find((item) => item.id === id);
+      if (skill) return skill;
+    }
+    return null;
   }
-  function doMoveTarget(t) {
-    if (!G || G.animating || !['dir', 'post', 'jump'].includes(G.phase)) return;
+
+  function doMoveTarget(raw) {
+    if (!G || G.animating || !['dir', 'post', 'jump'].includes(G.phase) || !raw) return;
     const p = G.phase === 'jump' ? jumpPiece() : seatPiece();
-    if (!p) return;
-    if (t.kind === 'noJump') return declineLongJump();
-    if (t.kind === 'jump') return confirmLongJump(Number(t.target));
-    if (t.kind === 'lane') return enterLane();
-    if (p.seat.isGhost && G.phase === 'dir') { G.dice = Number(t.dice); G.plusUsed = (t.plus === '1'); setDice(G.dice); }
-    const dir = Number(t.dir);
-    if (G.pendingExtra > 0) chooseExtraDir(dir); else chooseDir(dir);
+    if (!p || p.status !== 'free') return;
+    const target = moveDestinationOptions(p).find((option) => sameTarget(option, raw));
+    if (!target) return;
+    if (target.kind === 'noJump') return declineLongJump();
+    if (target.kind === 'jump') return confirmLongJump(target.target);
+    if (target.kind === 'lane') return enterLane();
+    if (p.seat.isGhost && G.phase === 'dir') {
+      G.dice = Number(target.dice);
+      G.plusUsed = !!target.plusUsed;
+      setDice(G.dice);
+    }
+    if (G.pendingExtra > 0) chooseExtraDir(Number(target.dir));
+    else chooseDir(Number(target.dir));
   }
+
+  function sameTarget(a, b) {
+    if (!a || !b || a.kind !== String(b.kind || '')) return false;
+    if (a.kind === 'noJump' || a.kind === 'lane') return true;
+    if (a.kind === 'jump') return Number(a.target) === Number(b.target);
+    if (a.kind === 'move') {
+      return Number(a.dir) === Number(b.dir)
+        && Number(a.dice) === Number(b.dice)
+        && !!a.plusUsed === (String(b.plus) === '1');
+    }
+    return false;
+  }
+
   function makeSnapshot() {
+    const end = G && G.over ? {
+      emoji: $('#endEmoji').textContent,
+      title: $('#endText').textContent,
+      sub: $('#endSub').textContent,
+    } : null;
     return {
-      seats: SEATS.map((s) => ({ name: s.name, isGhost: s.isGhost, color: s.color, roleId: s.roleKey })),
-      pieces: pieces.map((p) => ({ loc: p.loc, status: p.status })),
+      seats: SEATS.map((seat) => ({
+        name: seat.name,
+        isGhost: seat.isGhost,
+        color: seat.color,
+        roleId: seat.roleKey,
+        charName: seat.charName,
+        roleDesc: seat.roleDesc,
+        skills: (seat.skills || []).map((skill) => ({ ...skill })),
+        passives: (seat.passives || []).map((passive) => ({ ...passive })),
+      })),
+      pieces: pieces.map(pieceSnapshot),
       g: JSON.parse(JSON.stringify(G)),
       logs: logs.slice(0, 4),
-      turn: G.turn,
+      end,
+    };
+  }
+
+  function pieceSnapshot(p) {
+    return {
+      loc: p.loc ? { ...p.loc } : null,
+      status: p.status,
+      color: p.color,
+      carryT: p.carryT,
+      prisonT: p.prisonT,
+      holdTimer: !!p.holdTimer,
+      stunTurns: p.stunTurns || 0,
+      slowTurns: p.slowTurns || 0,
+      flashTurns: p.flashTurns || 0,
+      shield: p.shield || 0,
+      immune: p.immune || 0,
     };
   }
 
   /* ============ 观众 ============ */
   const FORWARD = {
-    doRoll: () => [], choosePlus: (u) => [u], undoPlus: () => [], endTurn: () => [],
-    declineLongJump: () => [], confirmLongJump: (t) => [t], enterLane: () => [],
-    cancelHook: () => [], chooseHookTarget: (i) => [i], chooseMindWarningDir: (d) => [d],
-    placeDoll: () => [], swapWithDoll: (i) => [i], useAdjacentAttack: (i) => [i],
-    chooseDir: (d) => [d], chooseExtraDir: (d) => [d],
+    doRoll: () => [],
+    choosePlus: (use) => [!!use],
+    undoPlus: () => [],
+    endTurn: () => [],
+    declineLongJump: () => [],
+    confirmLongJump: (target) => [Number(target)],
+    enterLane: () => [],
+    cancelHook: () => [],
+    chooseHookTarget: (index) => [Number(index)],
+    chooseMindWarningDir: (dir) => [Number(dir)],
+    placeDoll: () => [],
+    swapWithDoll: (index) => [Number(index)],
+    useAdjacentAttack: (index) => [Number(index)],
+    chooseDir: (dir) => [Number(dir)],
+    chooseExtraDir: (dir) => [Number(dir)],
+    useSkill: (id) => [String(id)],
+    declineReaction: () => [],
   };
+
   function startAsViewer(assign, seat) {
-    started = true; mySeat = seat;
+    mySeat = seat;
     viewerBuildSeats(assign);
-    // 拦截所有操作 → 转发给主机
-    Object.keys(FORWARD).forEach((name) => {
-      window[name] = function (...args) { socket.emit('act', { fn: name, args: FORWARD[name](...args) }); };
-    });
-    window.useSkill = function (skill) { socket.emit('act', { fn: 'useSkill', args: [skill.id] }); };
-    // 棋盘落点点击 → 转发
-    if (moveTargetsLayer) {
-      moveTargetsLayer.addEventListener('click', (e) => {
-        const g = e.target.closest && e.target.closest('.move-target');
-        if (!g) return;
-        e.stopPropagation(); e.preventDefault();
-        socket.emit('act', { fn: 'moveTarget', args: [{
-          kind: g.getAttribute('data-target-kind'),
-          target: g.getAttribute('data-target'),
-          dir: g.getAttribute('data-dir'),
-          dice: g.getAttribute('data-dice'),
-          plus: g.getAttribute('data-plus'),
-        }] });
-      }, true);
-    }
-    socket.on('snap', (s) => applySnapshot(s));
+    installInputBridge();
+    installSeatApi();
     showTurnBar();
   }
-  function viewerBuildSeats(assign) {
-    SEATS = assign.map((a) => {
-      const owner = a.isGhost ? 'ghost' : a.color;
-      const seat = makeSeat(a.color, roleById(owner, a.roleId), a.isGhost);
-      seat.name = a.name;
+
+  function installSeatApi() {
+    window.netMySeat = () => (isHost ? hostSeat : mySeat);
+    window.netIsMySeat = (seat) => Number(seat) === Number(window.netMySeat());
+    window.netIsHost = () => isHost;
+    window.netMatchActive = () => started;
+    window.netRefreshTurnBar = showTurnBar;
+  }
+
+  function viewerBuildSeats(seats) {
+    SEATS = seats.map((source) => {
+      const owner = source.isGhost ? 'ghost' : source.color;
+      const seat = makeSeat(source.color, roleById(owner, source.roleId || source.roleKey), source.isGhost);
+      seat.name = source.name || seat.name;
+      seat.charName = source.charName || seat.charName;
+      seat.roleDesc = source.roleDesc || seat.roleDesc;
+      if (Array.isArray(source.skills)) seat.skills = source.skills.map((skill) => ({ ...skill }));
+      if (Array.isArray(source.passives)) seat.passives = source.passives.map((passive) => ({ ...passive }));
       return seat;
     });
     createPieces();
     viewerSeated = true;
-    lastSeatsKey = JSON.stringify(assign);
+    lastSeatsKey = seatKey(seats);
   }
-  function applySnapshot(s) {
-    const key = JSON.stringify(s.seats);
-    if (!viewerSeated || key !== lastSeatsKey) viewerBuildSeats(s.seats);
-    for (let i = 0; i < s.pieces.length; i++) {
-      if (pieces[i]) { pieces[i].loc = s.pieces[i].loc; pieces[i].status = s.pieces[i].status; }
+
+  function applySnapshot(snapshot) {
+    if (!snapshot || !snapshot.g || !Array.isArray(snapshot.pieces) || !Array.isArray(snapshot.seats)) return;
+    const key = seatKey(snapshot.seats);
+    if (!viewerSeated || key !== lastSeatsKey) viewerBuildSeats(snapshot.seats);
+    syncSeats(snapshot.seats);
+    syncPieces(snapshot.pieces);
+    G = snapshot.g;
+    logs.length = 0;
+    (snapshot.logs || []).forEach((line) => logs.push(line));
+    if (statusEl) {
+      statusEl.innerHTML = logs.map((line, index) => '<div' + (index === 0 ? ' style="font-weight:700"' : '') + '>' + line + '</div>').join('');
     }
-    G = s.g;
-    logs.length = 0; (s.logs || []).forEach((l) => logs.push(l));
-    if (statusEl) statusEl.innerHTML = logs.map((x, i) => '<div' + (i === 0 ? ' style="font-weight:700"' : '') + '>' + x + '</div>').join('');
     try { renderPieces(); } catch (e) {}
     try { renderDolls(); } catch (e) {}
     try { setDice(G.dice); } catch (e) {}
     try { updateObjective(); } catch (e) {}
     try { updateUI(); } catch (e) {}
     try { renderActions(); } catch (e) {}
+    applyEndState(snapshot.end);
     showTurnBar();
   }
 
+  function syncSeats(seats) {
+    seats.forEach((source, index) => {
+      const seat = SEATS[index];
+      if (!seat) return;
+      seat.name = source.name || seat.name;
+      seat.charName = source.charName || seat.charName;
+      seat.roleDesc = source.roleDesc || seat.roleDesc;
+      if (Array.isArray(source.skills)) seat.skills = source.skills.map((skill) => ({ ...skill }));
+      if (Array.isArray(source.passives)) seat.passives = source.passives.map((passive) => ({ ...passive }));
+    });
+  }
+
+  function syncPieces(list) {
+    list.forEach((source, index) => {
+      const piece = pieces[index];
+      if (!piece) return;
+      piece.loc = source.loc ? { ...source.loc } : null;
+      piece.status = source.status;
+      piece.carryT = source.carryT || 0;
+      piece.prisonT = source.prisonT || 0;
+      piece.holdTimer = !!source.holdTimer;
+      piece.stunTurns = source.stunTurns || 0;
+      piece.slowTurns = source.slowTurns || 0;
+      piece.flashTurns = source.flashTurns || 0;
+      piece.shield = source.shield || 0;
+      piece.immune = source.immune || 0;
+    });
+  }
+
+  function seatKey(seats) {
+    return JSON.stringify(seats.map((seat) => ({
+      name: seat.name,
+      isGhost: !!seat.isGhost,
+      color: seat.color,
+      roleId: seat.roleId || seat.roleKey,
+    })));
+  }
+
+  function applyEndState(end) {
+    if (!end) {
+      lastEndKey = '';
+      endModal.classList.add('hidden');
+      return;
+    }
+    const key = JSON.stringify(end);
+    if (key === lastEndKey) return;
+    lastEndKey = key;
+    $('#endEmoji').textContent = end.emoji || '🏆';
+    $('#endText').textContent = end.title || '对局结束';
+    $('#endSub').textContent = end.sub || '';
+    endModal.classList.remove('hidden');
+  }
+
+  /* ---------- 统一输入桥 ---------- */
+  let bridgeInstalled = false;
+  function installInputBridge() {
+    if (bridgeInstalled) return;
+    bridgeInstalled = true;
+    document.addEventListener('click', (event) => {
+      const again = event.target.closest && event.target.closest('#againBtn, #resetBtn');
+      if (again && started) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        socket.emit('command', { type: 'restart' });
+        return;
+      }
+
+      const actionNode = event.target.closest && event.target.closest('[data-net-action]');
+      const moveNode = event.target.closest && event.target.closest('.move-target');
+      if (!actionNode && !moveNode) return;
+      const fn = actionNode ? actionNode.dataset.netAction : null;
+
+      if (isHost) {
+        if (!G) return;
+        const reaction = G.pendingReaction && G.pendingReaction.ownerSeat === hostSeat
+          && (fn === 'useSkill' || fn === 'declineReaction');
+        if (G.turn === hostSeat || reaction) return;
+        if (fn === 'useSkill' && actionNode) {
+          let rawArgs = [];
+          try { rawArgs = JSON.parse(actionNode.dataset.netArgs || '[]'); } catch (e) {}
+          if (instantSkillOwnedBy(rawArgs[0], hostSeat)) return;   // 主机本人的常亮技能
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (moveNode) {
+        socket.emit('act', { fn: 'moveTarget', args: [moveTargetPayload(moveNode)] });
+        return;
+      }
+      if (!FORWARD[fn]) return;
+      let rawArgs = [];
+      try { rawArgs = JSON.parse(actionNode.dataset.netArgs || '[]'); } catch (e) {}
+      socket.emit('act', { fn, args: FORWARD[fn](...rawArgs) });
+    }, true);
+  }
+
+  function moveTargetPayload(node) {
+    return {
+      kind: node.getAttribute('data-target-kind'),
+      target: node.getAttribute('data-target'),
+      dir: node.getAttribute('data-dir'),
+      dice: node.getAttribute('data-dice'),
+      plus: node.getAttribute('data-plus'),
+    };
+  }
+
+  socket.on('snap', applySnapshot);
+
   /* ---------- 回合提示条 ---------- */
   function showTurnBar() {
-    if (!started || !G) return;
+    if (!started || !G || !SEATS[G.turn]) {
+      turnBar.style.display = 'none';
+      return;
+    }
     const seat = SEATS[G.turn];
-    if (!seat) { turnBar.style.display = 'none'; return; }
-    const mine = (mySeat !== null && G.turn === mySeat) || (isHost && G.turn === hostSeat);
+    const pending = G.pendingReaction;
+    const reactionOwner = pending ? SEATS[pending.ownerSeat] : null;
+    const mine = pending
+      ? pending.ownerSeat === (isHost ? hostSeat : mySeat)
+      : (mySeat !== null && G.turn === mySeat) || (isHost && G.turn === hostSeat);
     turnBar.style.display = 'block';
-    turnBar.textContent = (G.over ? '🏁 对局结束' : (mine ? '👉 轮到你行动' : `等待 ${seat.name} 行动…`)) + `（第 ${G.round} 轮）`;
+    if (G.over) {
+      turnBar.textContent = '🏁 对局结束';
+      turnBar.style.background = '#1d2733';
+      return;
+    }
+    if (pending && reactionOwner) {
+      turnBar.textContent = (mine ? '👉 轮到你决定：' : `等待 ${reactionOwner.name} 决定：`) + (pending.skillName || '技能') + `（第 ${G.round} 轮）`;
+      turnBar.style.background = mine ? '#b77900' : '#1d2733';
+      return;
+    }
+    turnBar.textContent = (mine ? '👉 轮到你行动' : `等待 ${seat.name} 行动…`) + `（第 ${G.round} 轮）`;
     turnBar.style.background = mine ? '#2c7a2a' : '#1d2733';
   }
   setInterval(showTurnBar, 500);
 
-  function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  if (savedSession && savedSession.auto && savedSession.token && savedSession.room) {
+    showReconnectState();
+    requestJoin({
+      room: savedSession.room,
+      name: savedSession.name || $('netName').value.trim() || '玩家',
+      reconnectToken: savedSession.token,
+    });
+  }
+
+  function esc(value) {
+    return String(value).replace(/[&<>"]/g, (char) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
+    }[char]));
+  }
 })();
